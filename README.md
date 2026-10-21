@@ -65,12 +65,12 @@ The optional [gentle-ai](https://github.com/Gentleman-Programming/gentle-ai) int
 
 | Component | Requirement |
 | --- | --- |
-| PHP | 8.4.1 or later, with the `curl`, `json`, `mbstring`, and `posix` extensions. The `pcntl` extension is optional, but the `serve` command requires it. Without `pcntl`, Ctrl+C ends the process instead of canceling the current turn. |
+| PHP | 8.4.1 or later, with the `curl`, `dom`, `filter`, `json`, `mbstring`, `openssl`, and `posix` extensions. The `pcntl` extension is optional, but the `serve` command requires it. Without `pcntl`, Ctrl+C ends the process instead of canceling the current turn. |
 | Composer | 2.x |
 | Model server | llama.cpp `llama-server` (start it with `--jinja` for native tool calls), Ollama, an OpenAI-compatible endpoint, or a hosted provider with an API key |
 | Terminal UI | Go 1.26 or later. With the default `GOTOOLCHAIN=auto`, an older Go downloads the toolchain named in `tui/go.mod`. |
-| System commands | `timeout`, `bash`, and `git`. Optional: `rg` (ripgrep), `python3` and `node` (for `run_code`), and `gh` (for the GitHub tools). |
-| Sandboxes | `bwrap` (with `socat` when you use `sandbox.allow_domains`), Podman, or Docker |
+| System commands | `bash` and `git`. Optional: `timeout` from GNU coreutils (phycode uses it on Linux, and on macOS as `gtimeout` after `brew install coreutils`), `rg` (ripgrep), `python3` and `node` (for `run_code`), and `gh` (for the GitHub tools). |
+| Sandboxes | `bwrap` (Linux only, with `socat` when you use `sandbox.allow_domains`), Podman, or Docker |
 
 ### Install from source
 
@@ -109,16 +109,39 @@ The script copies `src/`, `resources/`, and the launcher into a temporary folder
 php build/phycode.phar version
 ```
 
-### Linux distributions
+### FreeBSD port
 
-phycode runs on Linux only. The hard line reads the users, the mounts, and the folder layout of the machine it runs on, so it needs no setting for each distribution. The end-to-end test in [Test](#test) passed on these images on 21 October 2026, each started new with Podman:
+`packaging/freebsd/devel/phycode` holds an entry for the FreeBSD ports tree. It installs the PHAR archive of a release as `bin/phycode`, and it depends on PHP 8.4 with the extensions phycode uses, `bash`, and `git`. The full-screen interface is not part of the port.
 
-| Distribution | Image | PHP | Packages the test installs | Notes |
+The port downloads `phycode-VERSION.phar` from the GitHub release `vVERSION`, so that release must exist, with the file built by `php bin/build-phar phycode-VERSION.phar`, before the port builds:
+
+```sh
+cp -R packaging/freebsd/devel/phycode /usr/ports/devel/phycode
+cd /usr/ports/devel/phycode
+make makesum
+make install clean
+```
+
+### Supported systems
+
+phycode runs on Linux, FreeBSD, and macOS. Windows is not supported. The hard line reads the users, the mounts, and the folder layout of the machine it runs on, so it needs no setting for each system. The workflow in `.github/workflows/ci.yml` runs the test suite for every push on Ubuntu, on macOS with and without coreutils, and in a FreeBSD 15.1 virtual machine, and it builds the terminal interface for Linux, macOS, and FreeBSD.
+
+On 21 October 2026, the whole test suite passed in CI on Ubuntu, macOS, and FreeBSD, and the end-to-end test in [End-to-end test](#end-to-end-test) passed on every system below except macOS, which cannot run it. The four Linux distributions ran the end-to-end test and the security and deploy unit tests in new Podman containers. FreeBSD also ran everything in a new QEMU virtual machine with KVM:
+
+| System | Image | PHP | Packages the test installs | Notes |
 | --- | --- | --- | --- | --- |
 | Debian 13 (trixie) | `debian:trixie-slim` | 8.4.27 | `php8.4-cli`, `php8.4-curl`, `php8.4-mbstring`, `php8.4-xml`, `composer`, `git` | `/bin`, `/lib`, and `/sbin` are links into `/usr`. `login.defs` sets the UIDs of people to 1000 to 60000. |
 | Alpine 3.24 | `alpine:latest` | 8.5.12 | `php85` with `curl`, `mbstring`, `posix`, `pcntl`, `phar`, `openssl`, `iconv`, `tokenizer`, `dom`, `xml`, `xmlwriter`, and `ctype`, then `composer`, `bash`, `git`, `coreutils` | The `composer` package runs on PHP 8.5, so install the `php85-*` extensions, not `php84-*`. `/bin` and `/usr/bin` are separate folders, and both are on `PATH`. There is no `login.defs`, so phycode counts UIDs 1000 to 60000 as people. |
 | Arch Linux | `archlinux:latest` | 8.5.12 | `php`, `composer`, `git` | The `php` package already loads `curl`, `mbstring`, `posix`, and `pcntl`. `/bin` and `/sbin` are links to `usr/bin`. |
 | openSUSE Tumbleweed | `opensuse/tumbleweed` | 8.5.12 | `php8`, `php8-cli` with `curl`, `mbstring`, `posix`, `pcntl`, `phar`, `openssl`, `tokenizer`, `dom`, `xmlwriter`, `ctype`, `iconv`, and `zip`, then `php-composer2`, `git-core` | `login.defs` is in `/usr/etc`, not in `/etc`. phycode reads it there. |
+| FreeBSD 15.1 | `FreeBSD-15.1-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2`, and `vmactions/freebsd-vm` in CI | 8.4.26 | `php84`, `php84-composer`, the extensions named in the CI workflow, `bash`, `git` | `openssl` is part of `php84`, and there is no `php84-openssl`. `/home` is a link to `/usr/home`, and `/proc` is not mounted, so phycode finds the mounts with `/sbin/mount` and its processes with `ps`. The base `timeout` is not used (see below). |
+| macOS 26 | GitHub `macos-latest` (`macos-26-arm64`) | 8.4.27 | PHP 8.4 from `shivammathur/setup-php`, and `brew install coreutils` in one of the two runs | The suite passed with and without coreutils. `/tmp` is a link to `/private/tmp`. The end-to-end test does not run. |
+
+On FreeBSD and macOS, phycode differs from Linux in these ways:
+
+- The FreeBSD `timeout` runs as a reaper and waits for every process a command leaves behind, so a command that started a daemon blocked until its time limit. phycode does not use it on FreeBSD. macOS has no `timeout` unless `brew install coreutils` installs `gtimeout`, and phycode uses that. Without a GNU `timeout`, phycode enforces the time limits itself, and it starts each command through a small `sh` wrapper that gives the command a process group, so it can stop what the command leaves behind.
+- `bwrap` works only on Linux, and the container sandboxes are tested on Linux only.
+- macOS has no `C.UTF-8` locale, so phycode sets `LC_CTYPE=UTF-8` for the commands it runs there, and `LANG=C.UTF-8` with `LC_ALL=C.UTF-8` elsewhere.
 
 ## Usage
 
@@ -378,14 +401,17 @@ The target of `rm -r`, `chmod -R`, `chown -R`, `chgrp -R`, or `find -delete` is 
 
 - The root, or any folder directly under it, such as `/usr`, `/mnt`, `/media`, or `/srv`.
 - A home folder: any home in `/etc/passwd`, your own `HOME`, and any folder directly under a home root, which covers a neighbour whose account is not in `/etc/passwd`. A home root is the parent of each home whose UID is between `UID_MIN` and `UID_MAX` of `login.defs`, and the base folder of `/etc/default/useradd` (`/home` by default). A folder that holds a home is refused too.
-- A mount point in `/proc/self/mounts`, or a folder that holds one.
-- A folder on `PATH`, the target of a top-level link such as `/bin -> usr/bin`, or a folder directly under a top-level folder that holds a `PATH` folder, such as `/usr/lib`.
+- A mount point in `/proc/self/mounts`, or in the output of `/sbin/mount` where `/proc` is not mounted, or a folder that holds one.
+- A folder on `PATH`, the target of a top-level link such as `/bin -> usr/bin`, or a folder directly under a top-level folder that holds a `PATH` folder, such as `/usr/lib`. A `PATH` folder inside a home does not count, so `~/bin` does not guard the rest of the home.
+- On macOS, the `Library` folder of your home.
+
+phycode reads the command around the target too. It expands globs and judges every match. It follows a `cd`, a variable set earlier in the command or in an `env` prefix, and a symbolic link made in the same command. It reads `find -exec rm`, `rsync --delete`, `shred`, and `git clean -f` like `rm -r`, reads the bodies of `trap` and `alias`, and sees through `parallel` and `ssh-agent`. A command nested more than four shells deep is refused, because the hard line cannot read it. A project below a top-level folder, such as `/srv/myproject` or `/opt/app`, is not on the line, but `/srv` and `/opt` are.
 
 phycode redacts configured API keys everywhere, including tool output and saved sessions. Error messages, notices, the model list, and `doctor` also hide URLs with embedded credentials, `Authorization` headers, and keys with the `sk-` prefix. Terminal control sequences are removed before any text is displayed.
 
 ## Sandboxing
 
-`sandbox.default` selects where `bash` and `run_code` run: `host` (default), `bwrap`, `podman`, or `docker`. The `--sandbox` option overrides this setting for one run.
+`sandbox.default` selects where `bash` and `run_code` run: `host` (default), `bwrap` (Linux only), `podman`, or `docker`. The `--sandbox` option overrides this setting for one run.
 
 - An agent file can request a different sandbox. A request for `host` falls back to the configured sandbox.
 - Podman and Docker require `sandbox.image`, for example `docker.io/library/debian:trixie-slim`.
@@ -394,11 +420,11 @@ phycode redacts configured API keys everywhere, including tool output and saved 
 
 ### bubblewrap
 
-With bubblewrap, the root filesystem is mounted read-only and the project folder is writable. Common credential paths are hidden, with an empty tmpfs or an empty file: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.config/gh`, `~/.config/phycode`, and others.
+Bubblewrap works only on Linux. On FreeBSD and macOS, phycode refuses `bwrap` and names the alternatives. With bubblewrap, the root filesystem is mounted read-only and the project folder is writable. Common credential paths are hidden, with an empty tmpfs or an empty file: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.config/gh`, `~/.config/phycode`, and others.
 
 ### Podman and Docker
 
-The project is mounted at `/workspace`. The folders `.git`, `.phycode`, and `.claude` are mounted read-only. The container drops all Linux capabilities, sets `no-new-privileges`, limits memory to 2 GB and processes to 512, and mounts `/tmp` as a 512 MB tmpfs. The image is never pulled implicitly (`--pull=never`). Network access is `none` unless `sandbox.network` is `bridge`.
+The container sandboxes are tested on Linux only. The project is mounted at `/workspace`. The folders `.git`, `.phycode`, and `.claude` are mounted read-only. The container drops all Linux capabilities, sets `no-new-privileges`, limits memory to 2 GB and processes to 512, and mounts `/tmp` as a 512 MB tmpfs. The image is never pulled implicitly (`--pull=never`). Network access is `none` unless `sandbox.network` is `bridge`.
 
 ### Git
 
@@ -591,9 +617,11 @@ PHYCODE_E2E_NETWORK=host tests/E2e/containers.sh   # when the container network 
 PHYCODE_E2E_RUNTIME=docker tests/E2e/containers.sh # Docker instead of Podman
 ```
 
-`tests/E2e/hard-line.php` runs `phycode run --yolo` against a scripted model, and asks for destructive commands through `bash`, a custom tool, and a deploy step. The targets are a neighbour's home (in `/etc/passwd`, missing from it, by `~neighbour`, and by glob), `/mnt`, `/media`, a mounted tmpfs and the folder that holds it, `/usr/bin`, `/usr/lib`, and the contents of the home folder reached from the project with `../*`. The test passes when each call is refused, each folder still exists, and the same three tools still delete a folder of the project. The script deletes real folders when the hard line fails, so it refuses to run outside a container or as a user other than root.
+`tests/E2e/hard-line.php` runs `phycode run --yolo` against a scripted model, and asks for destructive commands through `bash`, a custom tool, and a deploy step. The targets are a neighbour's home (in `/etc/passwd`, missing from it, by `~neighbour`, and by glob), `/mnt`, `/media`, a mounted tmpfs and the folder that holds it, `/usr/bin`, `/usr/lib`, and the contents of the home folder reached from the project with `../*`. The test passes when each call is refused, each folder still exists, and the same three tools still delete a folder of the project. The script deletes real folders when the hard line fails, so it refuses to run outside a container, unless `PHYCODE_E2E_DISPOSABLE=1` says that the machine is throw-away, or as a user other than root.
 
-`containers.sh` starts a new container for each distribution, installs PHP and Composer from the distribution's packages, mounts a tmpfs at `/srv/disk/vol`, and creates the user `neighbour`. It copies the repository without `vendor`, runs `composer install`, and then runs the end-to-end script and the security and deploy unit tests. See [Linux distributions](#linux-distributions) for the results.
+`containers.sh` starts a new container for each distribution, installs PHP and Composer from the distribution's packages, mounts a tmpfs at `/srv/disk/vol`, and creates the user `neighbour`. It copies the repository without `vendor`, runs `composer install`, and then runs the end-to-end script and the security and deploy unit tests. See [Supported systems](#supported-systems) for the results.
+
+On a machine that is not a container, such as the FreeBSD virtual machine of the CI workflow, mount a tmpfs at `/srv/disk/vol`, create the user `neighbour`, and run `PHYCODE_E2E_DISPOSABLE=1 php tests/E2e/hard-line.php` as root. The script does not run on macOS, whose read-only root volume has no `/srv` or `/mnt`.
 
 ### Lint and format
 
@@ -618,9 +646,12 @@ bin/phycode doctor --cwd .
 - Ollama is covered only by recorded fixtures. No chat model was installed for a live test.
 - The memory notes in `src/Memory/MemoryStore.php` enforce scope and secret rules, but no tool or prompt uses them yet.
 - `run_code` does not pass through the hard line. The sandbox is its protection.
-- The hard line judges an `ssh` command with the users, the mounts, and the `PATH` of this machine, not of the remote host. A relative path is resolved from the project folder, not from a folder that an earlier `cd` in the same command moved to.
+- The hard line judges an `ssh` command with the users, the mounts, and the `PATH` of this machine, not of the remote host.
 - A folder two or more levels below the root, such as `/usr/local/lib`, is on the hard line only when it is on `PATH`, is or holds a home, or is or holds a mount point. `/var/lib` is refused on most machines because the home of a system account is inside it, but that depends on the machine.
 - The hard line reads the summary of every exec tool as a command, so an `oracle` question that quotes a destructive command, for example in backticks, is refused too. Rephrase the question.
+- The hard line resolves links and globs when it reads the command, and the command runs later. A link or a folder that changes in between is not seen. This matters most when phycode runs as root and the model can make links, so run phycode as a normal user, or in a container.
+- Without a GNU `timeout`, which is always the case on FreeBSD, a background command stops at its lifetime only while phycode runs. If phycode is killed, the command goes on.
+- The container sandboxes and the end-to-end hard-line test have not run on macOS.
 - If a secret file is renamed to a name that does not look like a secret, an approved move exposes its content under the new name. The approval prompt shows both names.
 - For very long answers (about 120 KB), the Go interface uses a lot of CPU while the answer streams, because it renders Markdown for each chunk. This issue is known, and it is not fixed yet.
 

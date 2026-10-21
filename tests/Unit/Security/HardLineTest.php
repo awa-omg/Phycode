@@ -122,12 +122,33 @@ final class HardLineTest extends TestCase
         self::assertNull(HardLine::reason('bash: rm -rf ../other/build', $home . '/project'));
     }
 
+    public function testABinFolderInsideTheHomeDoesNotGuardTheRestOfTheHome(): void
+    {
+        $home = getenv('HOME');
+        $path = getenv('PATH');
+        putenv('HOME=/phycode-test-home');
+        putenv('PATH=/phycode-test-home/bin:' . $path);
+        try {
+            self::assertNull(HardLine::reason('bash: rm -rf /phycode-test-home/project', '/phycode-test-home/project'));
+            self::assertNull(HardLine::reason('bash: rm -rf ~/project', '/phycode-test-home/project'));
+            self::assertNotNull(HardLine::reason('bash: rm -rf /phycode-test-home', '/phycode-test-home/project'));
+        } finally {
+            putenv($home === false ? 'HOME' : 'HOME=' . $home);
+            putenv($path === false ? 'PATH' : 'PATH=' . $path);
+        }
+    }
+
     public function testAMountPointAndTheFoldersAboveItAreGuarded(): void
     {
+        if (is_readable('/proc/self/mounts')) {
+            $points = array_map(static fn (string $line): string => stripcslashes(explode(' ', $line)[1] ?? ''), file('/proc/self/mounts', FILE_IGNORE_NEW_LINES) ?: []);
+        } else {
+            exec('/sbin/mount', $lines);
+            $points = HardLine::mountsFrom($lines);
+        }
         $point = null;
-        foreach (file('/proc/self/mounts', FILE_IGNORE_NEW_LINES) ?: [] as $line) {
-            $candidate = explode(' ', $line)[1] ?? '';
-            if (substr_count($candidate, '/') >= 3 && !str_contains($candidate, '\\')) {
+        foreach ($points as $candidate) {
+            if (substr_count($candidate, '/') >= 3 && !str_contains($candidate, ' ') && !str_contains($candidate, '\\')) {
                 $point = $candidate;
                 break;
             }

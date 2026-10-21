@@ -7,6 +7,7 @@ namespace Phycode\Security;
 final class ShellCommand
 {
     public const TOOLS = ['bash', 'ssh'];
+    public const TOO_DEEP = "\0too-deep";
 
     private const MAX_DEPTH = 6;
     private const SHELLS = ['sh', 'bash', 'zsh', 'dash', 'ksh', 'ash'];
@@ -41,6 +42,8 @@ final class ShellCommand
         'su' => [['-s', '-g', '-G', '-w'], 0],
         'runuser' => [['-u', '-g', '-G', '-s'], 0],
         'pkexec' => [['-u'], 0],
+        'parallel' => [['-j', '-P', '-S', '-a', '-d', '-I', '-n', '-N', '-L'], 0],
+        'ssh-agent' => [['-a', '-E', '-t', '-P', '-O'], 0],
     ];
 
     private int $i = 0;
@@ -134,7 +137,7 @@ final class ShellCommand
     {
         $views = [$segment];
         $words = self::words($segment);
-        if ($words === null || $words === [] || $depth > 3) {
+        if ($words === null || $words === []) {
             return $views;
         }
         $views[] = implode(' ', $words);
@@ -156,7 +159,9 @@ final class ShellCommand
                 $views[] = implode(' ', $words);
             }
             $inner = self::innerCommand($words);
-            if ($inner !== null) {
+            if ($inner !== null && $depth > 3) {
+                $views[] = self::TOO_DEEP;
+            } elseif ($inner !== null) {
                 foreach (self::segments($inner) ?? [$inner] as $segment) {
                     array_push($views, ...self::views($segment, $depth + 1));
                 }
@@ -187,6 +192,16 @@ final class ShellCommand
         $rest = array_slice($words, 1);
         if ($program === 'eval') {
             return $rest === [] ? null : implode(' ', $rest);
+        }
+        if ($program === 'trap') {
+            $actions = array_values(array_filter($rest, static fn (string $word): bool => !str_starts_with($word, '-')));
+
+            return $actions === [] ? null : $actions[0];
+        }
+        if ($program === 'alias') {
+            $values = array_map(static fn (string $word): string => substr($word, (int) strpos($word, '=') + 1), array_filter($rest, static fn (string $word): bool => str_contains($word, '=')));
+
+            return $values === [] ? null : implode('; ', $values);
         }
         if (!in_array($program, self::SHELLS, true)) {
             return null;

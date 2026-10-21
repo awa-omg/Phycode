@@ -124,7 +124,14 @@ make install clean
 
 ### Supported systems
 
-phycode runs on Linux, FreeBSD, and macOS. Windows is not supported. The hard line reads the users, the mounts, and the folder layout of the machine it runs on, so it needs no setting for each system. The workflow in `.github/workflows/ci.yml` runs the test suite for every push on Ubuntu, on macOS with and without coreutils, and in a FreeBSD 15.1 virtual machine, and it builds the terminal interface for Linux, macOS, and FreeBSD.
+phycode runs on Linux, FreeBSD, and macOS. Windows is not supported. The hard line reads the users, the mounts, and the folder layout of the machine it runs on, so it needs no setting for each system.
+
+| Support | Systems | How it is checked |
+| --- | --- | --- |
+| Tested on every push | Ubuntu, macOS 26 with and without coreutils, FreeBSD 15.1 | `.github/workflows/ci.yml` runs the whole test suite on each of them. On FreeBSD it also runs the end-to-end test of the hard line. For Linux, macOS, and FreeBSD it builds the terminal interface. |
+| Tested by hand | Debian 13, Alpine 3.24, Arch Linux, openSUSE Tumbleweed | The end-to-end test and the security and deploy unit tests, in new Podman containers (see [End-to-end test](#end-to-end-test)). |
+| Not tried | OpenBSD, NetBSD, DragonFly BSD | phycode treats the whole BSD family like FreeBSD, but nobody has run it on these. |
+| Not supported | Windows | |
 
 On 21 October 2026, the whole test suite passed in CI on Ubuntu, macOS, and FreeBSD, and the end-to-end test in [End-to-end test](#end-to-end-test) passed on every system below except macOS, which cannot run it. The four Linux distributions ran the end-to-end test and the security and deploy unit tests in new Podman containers. FreeBSD also ran everything in a new QEMU virtual machine with KVM:
 
@@ -135,7 +142,7 @@ On 21 October 2026, the whole test suite passed in CI on Ubuntu, macOS, and Free
 | Arch Linux | `archlinux:latest` | 8.5.12 | `php`, `composer`, `git` | The `php` package already loads `curl`, `mbstring`, `posix`, and `pcntl`. `/bin` and `/sbin` are links to `usr/bin`. |
 | openSUSE Tumbleweed | `opensuse/tumbleweed` | 8.5.12 | `php8`, `php8-cli` with `curl`, `mbstring`, `posix`, `pcntl`, `phar`, `openssl`, `tokenizer`, `dom`, `xmlwriter`, `ctype`, `iconv`, and `zip`, then `php-composer2`, `git-core` | `login.defs` is in `/usr/etc`, not in `/etc`. phycode reads it there. |
 | FreeBSD 15.1 | `FreeBSD-15.1-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2`, and `vmactions/freebsd-vm` in CI | 8.4.26 | `php84`, `php84-composer`, the extensions named in the CI workflow, `bash`, `git` | `openssl` is part of `php84`, and there is no `php84-openssl`. `/home` is a link to `/usr/home`, and `/proc` is not mounted, so phycode finds the mounts with `/sbin/mount` and its processes with `ps`. The base `timeout` is not used (see below). |
-| macOS 26 | GitHub `macos-latest` (`macos-26-arm64`) | 8.4.27 | PHP 8.4 from `shivammathur/setup-php`, and `brew install coreutils` in one of the two runs | The suite passed with and without coreutils. `/tmp` is a link to `/private/tmp`. The end-to-end test does not run. |
+| macOS 26 | GitHub `macos-latest` (`macos-26-arm64`) | 8.4.27 | PHP 8.4 from `shivammathur/setup-php`, and `brew install coreutils` in one of the two runs. By hand, `brew install php composer` should do, but it is not tested | The suite passed with and without coreutils. `/tmp` is a link to `/private/tmp`. The end-to-end test does not run. |
 
 On FreeBSD and macOS, phycode differs from Linux in these ways:
 

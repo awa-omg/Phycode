@@ -1,0 +1,9 @@
+phycode is a coding agent for local models, written in PHP. It reads and edits
+the files of a project, runs commands, and delegates subtasks to subagents. It
+works with llama.cpp, Ollama, OpenAI-compatible servers, and hosted providers.
+
+Every command passes through a permission system. A hard line refuses
+destructive commands in every mode, and commands can run in a container.
+
+The package installs the command line program. The full-screen interface is a
+separate Go program that is not part of this port.

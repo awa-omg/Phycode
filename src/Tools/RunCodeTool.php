@@ -39,6 +39,11 @@ final class RunCodeTool extends BaseTool
         return ToolCategory::Exec;
     }
 
+    public function sandboxed(): bool
+    {
+        return true;
+    }
+
     public function isAvailable(RunPolicy $policy): bool
     {
         return $this->languages !== [];

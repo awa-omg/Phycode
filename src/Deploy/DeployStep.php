@@ -24,9 +24,13 @@ final readonly class DeployStep
 
     public function display(): string
     {
-        $words = array_map(static fn (string $word): string => preg_match('~^[A-Za-z0-9_@%+=:,./-]+$~', $word) === 1 ? $word : "'" . str_replace("'", "'\\''", $word) . "'", $this->argv);
-        $line = ($this->type === self::COPY ? 'copy ' : '') . implode(' ', $words);
+        return $this->host === null ? $this->line() : "[{$this->host}] {$this->line()}";
+    }
 
-        return $this->host === null ? $line : "[{$this->host}] {$line}";
+    public function line(): string
+    {
+        $words = array_map(static fn (string $word): string => preg_match('~^[A-Za-z0-9_@%+=:,./-]+$~', $word) === 1 ? $word : "'" . str_replace("'", "'\\''", $word) . "'", $this->argv);
+
+        return ($this->type === self::COPY ? 'copy ' : '') . implode(' ', $words);
     }
 }

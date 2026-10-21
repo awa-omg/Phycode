@@ -44,4 +44,9 @@ abstract class BaseTool implements Tool
     {
         return false;
     }
+
+    public function sandboxed(): bool
+    {
+        return false;
+    }
 }

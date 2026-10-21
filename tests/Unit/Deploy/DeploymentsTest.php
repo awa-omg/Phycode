@@ -152,6 +152,18 @@ final class DeploymentsTest extends TestCase
         self::assertStringStartsWith('deploy box: apply FAILED', $result->report(false));
     }
 
+    public function testAStepOnTheHardLineStopsTheWholeDeployBeforeAnyStepRuns(): void
+    {
+        $this->cli = FakeCli::install(['one' => 'echo first']);
+        $deployments = $this->deployments(['box' => ['kind' => 'custom', 'commands' => ['apply' => [['one'], ['sh', '-c', 'rm -rf /home/neighbour']]]]]);
+
+        $result = $this->execute($deployments, 'box', 'apply');
+
+        self::assertFalse($result->ok);
+        self::assertStringContainsString("refused: rm -r of the root, a home folder, a system folder or a mount point is never run, in any mode and with any approval. Step 'apply 2' was not run", (string) $result->error);
+        self::assertSame([], $this->cli->calls('one'));
+    }
+
     public function testAnOptionalStepThatFailsDoesNotStopTheDeploy(): void
     {
         $this->cli = FakeCli::install(['docker' => 'case "$1" in tag) echo "no such image" >&2; exit 1;; rm) exit 1;; esac; echo "done $1"'], []);

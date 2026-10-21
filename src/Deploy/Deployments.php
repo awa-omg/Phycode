@@ -7,6 +7,7 @@ namespace Phycode\Deploy;
 use Phycode\Deploy\Drivers\Drivers;
 use Phycode\Exec\ProcessResult;
 use Phycode\Exec\ProcessRunner;
+use Phycode\Security\HardLine;
 use Phycode\Ssh\SshHosts;
 use Phycode\Support\Cancellation;
 use Phycode\Support\PhycodeException;
@@ -138,6 +139,10 @@ final class Deployments
         foreach ($plan->steps as $step) {
             if ($step->host === null && $step->type === DeployStep::RUN && !str_contains($step->argv[0], '/') && ProcessRunner::which($step->argv[0]) === null) {
                 return new DeployResult(false, $name, $action, [], error: "{$step->argv[0]} was not found on PATH, so nothing was run. Install it, or set command in the target.", seconds: microtime(true) - $started);
+            }
+            $hard = HardLine::reason("deploy: {$step->line()}", $step->host === null ? $this->directory($target) : null);
+            if ($hard !== null) {
+                return new DeployResult(false, $name, $action, [], error: "refused: {$hard} is never run, in any mode and with any approval. Step '{$step->label}' was not run, and neither was any other.", seconds: microtime(true) - $started);
             }
         }
 

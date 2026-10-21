@@ -29,6 +29,11 @@ final class BashTool extends BaseTool
         return ToolCategory::Exec;
     }
 
+    public function sandboxed(): bool
+    {
+        return true;
+    }
+
     public function parameters(): array
     {
         return [

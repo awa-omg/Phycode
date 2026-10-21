@@ -29,4 +29,6 @@ interface Tool
     public function autoApproved(): bool;
 
     public function forcesApproval(array $args): bool;
+
+    public function sandboxed(): bool;
 }

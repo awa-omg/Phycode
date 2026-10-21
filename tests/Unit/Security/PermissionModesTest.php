@@ -230,8 +230,38 @@ final class PermissionModesTest extends TestCase
         $inContainer = $context->forAgent(Kit::agent(), Kit::policy('yolo'), new Cancellation(), 'test', $container);
         $permissions = new Permissions($ui);
 
-        self::assertNull($permissions->check(self::tool('bash', ToolCategory::Exec), $inContainer, 'bash: rm -rf /'));
-        self::assertNotNull($permissions->check(self::tool('bash', ToolCategory::Exec), $context, 'bash: rm -rf /'));
+        self::assertNull($permissions->check(self::tool('bash', ToolCategory::Exec, true), $inContainer, 'bash: rm -rf /'));
+        self::assertNotNull($permissions->check(self::tool('bash', ToolCategory::Exec, true), $context, 'bash: rm -rf /'));
+        self::assertNotNull($permissions->check(self::tool('custom__wipe', ToolCategory::Exec), $inContainer, 'custom__wipe: rm -rf /'), 'a tool that runs outside the container is still on the line');
+    }
+
+    public function testEveryExecToolIsOnTheLineWhateverItsName(): void
+    {
+        foreach (['custom__wipe', 'ssh', 'a_tool_added_later'] as $name) {
+            $ui = new RecordingUi();
+            $permissions = new Permissions($ui, new Rules(['allow' => ['*']]));
+
+            $reason = $permissions->check(self::tool($name, ToolCategory::Exec), $this->context($ui, 'yolo'), "{$name}: rm -rf /home/neighbour");
+
+            self::assertSame('refused: rm -r of the root, a home folder, a system folder or a mount point is never run, in any mode and with any approval', $reason, $name);
+        }
+    }
+
+    public function testATargetRelativeToTheProjectIsResolvedFromTheProjectFolder(): void
+    {
+        $ui = new RecordingUi();
+        $permissions = new Permissions($ui);
+
+        self::assertNotNull($permissions->check(self::tool('bash', ToolCategory::Exec), $this->context($ui, 'yolo'), 'bash: rm -rf ' . str_repeat('../', substr_count($this->root, '/'))));
+        self::assertNull($permissions->check(self::tool('bash', ToolCategory::Exec), $this->context($ui, 'yolo'), 'bash: rm -rf build'));
+    }
+
+    public function testAToolThatRunsNoCommandIsNotReadAsOne(): void
+    {
+        $ui = new RecordingUi();
+        $ui->decisions = [Decision::AllowOnce];
+
+        self::assertNull((new Permissions($ui))->check(self::tool('write', ToolCategory::Write), $this->context($ui, 'ask'), 'write: rm -rf /'));
     }
 
     public function testAnAllowRuleDoesNotApproveACommandChainedToAnAllowedOne(): void
@@ -246,11 +276,16 @@ final class PermissionModesTest extends TestCase
         self::assertCount(1, $this->confirmations($ui), 'the chained command is asked about, the allowed one is not');
     }
 
-    private static function tool(string $name, ToolCategory $category): Tool
+    private static function tool(string $name, ToolCategory $category, bool $sandboxed = false): Tool
     {
-        return new class ($name, $category) extends BaseTool {
-            public function __construct(private readonly string $toolName, private readonly ToolCategory $toolCategory)
+        return new class ($name, $category, $sandboxed) extends BaseTool {
+            public function __construct(private readonly string $toolName, private readonly ToolCategory $toolCategory, private readonly bool $inSandbox)
             {
+            }
+
+            public function sandboxed(): bool
+            {
+                return $this->inSandbox;
             }
 
             public function name(): string

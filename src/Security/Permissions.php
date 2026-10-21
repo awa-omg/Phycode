@@ -29,7 +29,7 @@ final class Permissions
         if ($deny !== null) {
             return "refused by the rule '{$deny}' in rules.deny";
         }
-        if (in_array($name, ShellCommand::TOOLS, true) && ($name !== 'bash' || !($context->sandbox instanceof ContainerRunner))) {
+        if ($category === ToolCategory::Exec && !($tool->sandboxed() && $context->sandbox instanceof ContainerRunner)) {
             $hard = HardLine::reason($summary, $context->workspace->root);
             if ($hard !== null) {
                 return "refused: {$hard} is never run, in any mode and with any approval";

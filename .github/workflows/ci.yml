@@ -1,0 +1,84 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: curl, dom, filter, mbstring, openssl, pcntl, posix, sockets
+          tools: composer
+      - run: composer install --no-interaction --no-progress
+      - run: vendor/bin/phpunit
+
+  macos:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        coreutils: [without, with]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: curl, dom, filter, mbstring, openssl, pcntl, posix, sockets
+          tools: composer
+      - if: matrix.coreutils == 'with'
+        run: brew install coreutils
+      - run: composer install --no-interaction --no-progress
+      - run: vendor/bin/phpunit
+
+  freebsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          release: '15.1'
+          prepare: |
+            pkg install -y php84 php84-composer php84-curl php84-mbstring php84-posix php84-pcntl php84-phar php84-tokenizer php84-dom php84-xml php84-xmlwriter php84-ctype php84-iconv php84-filter php84-session php84-simplexml php84-zip php84-zlib php84-fileinfo php84-sockets bash git
+          run: |
+            set -e
+            composer install --no-interaction --no-progress
+            mkdir -p /srv/disk/vol
+            mount -t tmpfs tmpfs /srv/disk/vol
+            pw useradd neighbour -m
+            PHYCODE_E2E_DISPOSABLE=1 php tests/E2e/hard-line.php
+            vendor/bin/phpunit
+
+  tui:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [linux/amd64, darwin/arm64, darwin/amd64, freebsd/amd64]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: tui/go.mod
+      - name: build
+        working-directory: tui
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          target='${{ matrix.target }}'
+          GOOS="${target%/*}" GOARCH="${target#*/}" go build -o /dev/null ./cmd/phycode-tui
+      - name: test
+        if: matrix.target == 'linux/amd64'
+        working-directory: tui
+        run: go test -race ./...

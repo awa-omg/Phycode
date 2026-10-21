@@ -1,0 +1,14 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$autoload = dirname(__DIR__) . '/vendor/autoload.php';
+if (!is_file($autoload)) {
+    fwrite(STDERR, "phycode: dependencies are missing. Run: composer install\n");
+    exit(1);
+}
+
+require $autoload;
+
+exit(Phycode\Cli\Application::run($argv));

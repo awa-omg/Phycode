@@ -1,0 +1,1 @@
+{"model":"qwen35-2b","max_tokens":16,"messages":[{"role":"user","content":[{"type":"text","text":"Count from one to twenty in words."}]}],"stream":true,"temperature":0.6,"top_p":0.95,"top_k":20,"chat_template_kwargs":{"enable_thinking":false}}

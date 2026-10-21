@@ -1,0 +1,5 @@
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_doc3","object":"response","status":"in_progress","output":[]}}
+
+event: response.incomplete
+data: {"type":"response.incomplete","sequence_number":1,"response":{"id":"resp_doc3","object":"response","status":"incomplete","incomplete_details":{"reason":"content_filter"},"output":[],"usage":{"input_tokens":30,"output_tokens":0,"total_tokens":30}}}

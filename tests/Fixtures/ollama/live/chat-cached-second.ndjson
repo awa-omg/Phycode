@@ -1,0 +1,15 @@
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:35.802216201Z","message":{"role":"assistant","content":"**"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:36.259688247Z","message":{"role":"assistant","content":"Ac"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:36.260598093Z","message":{"role":"assistant","content":"ued"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:36.260803668Z","message":{"role":"assistant","content":"uct"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:36.260957667Z","message":{"role":"assistant","content":"os"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:36.795704269Z","message":{"role":"assistant","content":"**"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:36.795724467Z","message":{"role":"assistant","content":" ("},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:37.290739159Z","message":{"role":"assistant","content":"o"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:37.820407974Z","message":{"role":"assistant","content":" **"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:37.820472786Z","message":{"role":"assistant","content":"Ing"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:37.820816931Z","message":{"role":"assistant","content":"en"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:37.820823102Z","message":{"role":"assistant","content":"iería"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:38.612980407Z","message":{"role":"assistant","content":"**"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:39.184518567Z","message":{"role":"assistant","content":")."},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:39.185079108Z","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","total_duration":3534676821,"load_duration":3514847,"prompt_eval_count":479,"prompt_eval_duration":134716000,"eval_count":15,"eval_duration":3384025000}

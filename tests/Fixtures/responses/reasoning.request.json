@@ -1,0 +1,1 @@
+{"model":"qwen35-2b","input":[{"type":"message","role":"user","content":"What is 17 times 23? Reply with the number only."}],"stream":true,"store":false,"max_output_tokens":1024,"instructions":"Be brief.","reasoning":{"effort":"low"},"include":["reasoning.encrypted_content"]}

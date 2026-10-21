@@ -1,0 +1,6 @@
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:13:12.485600113Z","message":{"role":"assistant","content":"##"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:13:13.224707664Z","message":{"role":"assistant","content":" La"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:13:13.22560691Z","message":{"role":"assistant","content":" Fotos"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:13:13.226090065Z","message":{"role":"assistant","content":"ínt"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:13:13.226616051Z","message":{"role":"assistant","content":"esis"},"done":false}
+{"error":"an error was encountered while running the model: unexpected EOF"}

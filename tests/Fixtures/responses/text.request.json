@@ -1,0 +1,1 @@
+{"model":"qwen35-2b","input":[{"type":"message","role":"user","content":"What colour is a clear daytime sky? One word."}],"stream":true,"store":false,"max_output_tokens":256,"instructions":"Answer with one word.","temperature":0.6,"top_p":0.95,"chat_template_kwargs":{"enable_thinking":false}}

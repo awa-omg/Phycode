@@ -1,0 +1,26 @@
+{
+    "pageSize": 1,
+    "tools": [
+        {
+            "name": "upper",
+            "description": "Upper-cases the text argument.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"]
+            }
+        },
+        {
+            "name": "options",
+            "description": "Takes nested settings.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "settings": {"type": "object", "properties": {"verbose": {"type": "boolean"}}},
+                    "tags": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["settings"]
+            }
+        }
+    ]
+}

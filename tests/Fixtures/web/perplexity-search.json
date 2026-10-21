@@ -1,0 +1,26 @@
+{
+  "results": [
+    {
+      "title": "Web search engine - Wikipedia",
+      "url": "https://en.wikipedia.org/wiki/Web_search_engine",
+      "snippet": "A web search engine is a software system designed to search for information on the World Wide Web.",
+      "date": "2025-01-23",
+      "last_updated": "2025-09-25"
+    },
+    {
+      "title": "Lionel Messi Facts | Britannica",
+      "url": "https://www.britannica.com/facts/Lionel-Messi",
+      "snippet": "Lionel Messi, an <b>Argentine</b> footballer, is widely regarded as one of the greatest football players of his generation.",
+      "date": null,
+      "last_updated": null
+    },
+    {
+      "title": "How search engines rank pages",
+      "url": "https://example.net/ranking",
+      "snippet": "An overview of crawling, indexing and ranking, written for developers.",
+      "date": "2024-09-10",
+      "last_updated": "2025-07-03"
+    }
+  ],
+  "id": "e38104d5-6bd7-4d82-bc4e-0a21179d1f77"
+}

@@ -1,0 +1,1 @@
+{"id":"m-2","object":"chat.completion","model":"mistral-small-latest","choices":[{"index":0,"message":{"role":"assistant","content":[{"type":"thinking","thinking":[{"type":"text","text":"Two plus two."}]},{"type":"text","text":"Four."}],"tool_calls":null},"finish_reason":"stop"}],"usage":{"prompt_tokens":8,"completion_tokens":6,"total_tokens":14}}

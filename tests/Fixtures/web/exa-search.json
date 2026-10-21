@@ -1,0 +1,46 @@
+{
+  "requestId": "b5a3f6c2-3c1e-4f2a-9d3e-1a2b3c4d5e6f",
+  "results": [
+    {
+      "id": "https://en.wikipedia.org/wiki/Web_search_engine",
+      "title": "Web search engine - Wikipedia",
+      "url": "https://en.wikipedia.org/wiki/Web_search_engine",
+      "publishedDate": "2025-02-14",
+      "author": null,
+      "highlights": [
+        "A web search engine is a software system designed to search for information on the World Wide Web.",
+        "The search results are generally presented in a line of results."
+      ],
+      "highlightScores": [0.62, 0.41]
+    },
+    {
+      "id": "https://example.com/how-search-works",
+      "title": "How a search engine works",
+      "url": "https://example.com/how-search-works",
+      "publishedDate": "2024-11-03",
+      "author": "A. Writer",
+      "highlights": [
+        "Crawlers fetch pages, and an index records which words appear on which pages."
+      ],
+      "highlightScores": [0.55]
+    },
+    {
+      "id": "https://example.org/no-highlights",
+      "title": "A page without highlights",
+      "url": "https://example.org/no-highlights",
+      "publishedDate": "2023-06-01",
+      "author": null,
+      "highlights": []
+    }
+  ],
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.005
+    },
+    "contents": {
+      "highlights": 0.002
+    }
+  },
+  "searchTime": 812.4
+}

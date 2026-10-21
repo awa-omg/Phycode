@@ -1,0 +1,8 @@
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_doc6","object":"response","status":"in_progress","output":[]}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"id":"msg_doc6","type":"message","status":"in_progress","role":"assistant","content":[]}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_doc6","output_index":0,"content_index":0,"delta":"The reply stops"}

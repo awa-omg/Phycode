@@ -1,0 +1,88 @@
+{
+  "instructions": "Use echo for tests.",
+  "resources": [
+    {
+      "uri": "file:///project/README.md",
+      "name": "README.md",
+      "description": "The readme",
+      "mimeType": "text/markdown"
+    },
+    {
+      "uri": "file:///project/logo.png",
+      "name": "logo.png",
+      "mimeType": "image/png"
+    }
+  ],
+  "resourceTemplates": [
+    {
+      "uriTemplate": "file:///logs/{day}.log",
+      "name": "Logs",
+      "description": "Logs by day",
+      "mimeType": "text/plain"
+    }
+  ],
+  "resourceContents": {
+    "file:///project/README.md": [
+      {
+        "uri": "file:///project/README.md",
+        "mimeType": "text/markdown",
+        "text": "# Hello\n"
+      }
+    ],
+    "file:///project/logo.png": [
+      {
+        "uri": "file:///project/logo.png",
+        "mimeType": "image/png",
+        "blob": "iVBORw0KGgo="
+      }
+    ]
+  },
+  "prompts": [
+    {
+      "name": "review",
+      "description": "Review code",
+      "arguments": [
+        {
+          "name": "code",
+          "description": "The code",
+          "required": true
+        },
+        {
+          "name": "focus",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "hello"
+    }
+  ],
+  "promptMessages": {
+    "review": [
+      {
+        "role": "user",
+        "content": {
+          "type": "text",
+          "text": "Please review: {code}"
+        }
+      },
+      {
+        "role": "assistant",
+        "content": {
+          "type": "text",
+          "text": "Focus: {focus}"
+        }
+      }
+    ],
+    "hello": [
+      {
+        "role": "user",
+        "content": {
+          "type": "text",
+          "text": "Hello there"
+        }
+      }
+    ]
+  },
+  "modern": true
+}

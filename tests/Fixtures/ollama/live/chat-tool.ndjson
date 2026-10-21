@@ -1,0 +1,2 @@
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:14:05.345761085Z","message":{"role":"assistant","content":"","tool_calls":[{"id":"call_meht2eww","function":{"index":0,"name":"get_weather","arguments":{"city":"Madrid"}}}]},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:14:05.362723808Z","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","total_duration":29484537604,"load_duration":25295502441,"prompt_eval_count":74,"prompt_eval_duration":1457212000,"eval_count":15,"eval_duration":2567933000}

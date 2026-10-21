@@ -1,0 +1,1 @@
+{"models":[{"name":"gemma4:e2b","model":"gemma4:e2b","size":1024290978,"digest":"b37049369adfe3d2b653af0ab301a062ca5cbe96ace6aa0d3f2559ee9b563fc2","details":{"parent_model":"","format":"gguf","family":"gemma4","families":["gemma4"],"parameter_size":"4.6B","quantization_level":"Q4_K_M"},"expires_at":"2026-10-19T11:12:39.195300847Z","size_vram":0,"context_length":16384}]}

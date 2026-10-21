@@ -1,0 +1,35 @@
+{
+  "data": [
+    {
+      "id": "openai/gpt-oss-120b",
+      "name": "OpenAI: gpt-oss-120b",
+      "context_length": 131072,
+      "supported_parameters": ["include_reasoning", "max_tokens", "reasoning", "temperature", "tools"],
+      "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+      "reasoning": {"supported_efforts": ["high", "medium", "low", "minimal"], "default_effort": "medium", "default_enabled": true, "mandatory": false}
+    },
+    {
+      "id": "google/gemini-3.5-flash",
+      "name": "Google: Gemini 3.5 Flash",
+      "context_length": 1048576,
+      "supported_parameters": ["reasoning", "tools"],
+      "architecture": {"input_modalities": ["text", "image"], "output_modalities": ["text"]},
+      "reasoning": {"supported_efforts": ["high", "medium", "low", "minimal"], "default_effort": "medium", "default_enabled": true, "mandatory": true}
+    },
+    {
+      "id": "anthropic/claude-example",
+      "name": "Anthropic: example",
+      "context_length": 200000,
+      "supported_parameters": ["reasoning", "tools"],
+      "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+      "reasoning": {"supported_efforts": null, "default_enabled": false, "supports_max_tokens": true, "mandatory": false}
+    },
+    {
+      "id": "meta-llama/plain",
+      "name": "Meta: plain",
+      "context_length": 8192,
+      "supported_parameters": ["temperature", "tools"],
+      "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]}
+    }
+  ]
+}

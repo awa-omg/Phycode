@@ -1,0 +1,1 @@
+{"model":"qwen35-2b","messages":[{"role":"system","content":"You are a concise assistant."},{"role":"user","content":"Name three primary colours. Answer in one short sentence."}],"stream":true,"max_tokens":2048,"temperature":0.6,"top_p":0.95,"top_k":20,"min_p":0,"presence_penalty":0,"chat_template_kwargs":{"enable_thinking":false}}

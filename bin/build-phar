@@ -1,0 +1,76 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+if (ini_get('phar.readonly') !== '0') {
+    passthru(escapeshellarg(PHP_BINARY) . ' -d phar.readonly=0 ' . escapeshellarg(__FILE__) . ' ' . implode(' ', array_map('escapeshellarg', array_slice($argv, 1))), $code);
+    exit($code);
+}
+
+$root = dirname(__DIR__);
+$output = $argv[1] ?? $root . '/build/phycode.phar';
+if (!is_dir(dirname($output)) && !mkdir(dirname($output), 0775, true)) {
+    fwrite(STDERR, "build-phar: cannot make the folder of {$output}\n");
+    exit(1);
+}
+
+$remove = static function (string $path) use (&$remove): void {
+    if (is_dir($path) && !is_link($path)) {
+        foreach (array_diff(scandir($path) ?: [], ['.', '..']) as $name) {
+            $remove($path . '/' . $name);
+        }
+        rmdir($path);
+    } elseif (file_exists($path) || is_link($path)) {
+        unlink($path);
+    }
+};
+$copy = static function (string $from, string $to) use (&$copy): void {
+    if (is_dir($from)) {
+        mkdir($to, 0775, true);
+        foreach (array_diff(scandir($from) ?: [], ['.', '..']) as $name) {
+            $copy($from . '/' . $name, $to . '/' . $name);
+        }
+    } else {
+        copy($from, $to);
+    }
+};
+
+$stage = sys_get_temp_dir() . '/phycode-phar-' . bin2hex(random_bytes(6));
+mkdir($stage . '/bin', 0775, true);
+try {
+    foreach (['src', 'resources'] as $folder) {
+        $copy($root . '/' . $folder, $stage . '/' . $folder);
+    }
+    foreach (['composer.json', 'composer.lock'] as $file) {
+        copy($root . '/' . $file, $stage . '/' . $file);
+    }
+    copy($root . '/bin/phycode', $stage . '/bin/phycode');
+
+    passthru('cd ' . escapeshellarg($stage) . ' && COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --classmap-authoritative --no-interaction --no-scripts --no-plugins 2>&1', $code);
+    if ($code !== 0 || !is_file($stage . '/vendor/autoload.php')) {
+        throw new RuntimeException('composer install failed');
+    }
+
+    @unlink($output);
+    $phar = new Phar($output, 0, 'phycode.phar');
+    $phar->startBuffering();
+    $files = 0;
+    foreach (['src', 'resources', 'vendor', 'bin'] as $folder) {
+        foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($stage . '/' . $folder, FilesystemIterator::SKIP_DOTS)) as $file) {
+            if ($file->isFile()) {
+                $phar->addFile($file->getPathname(), substr($file->getPathname(), strlen($stage) + 1));
+                $files++;
+            }
+        }
+    }
+    $phar->setStub("#!/usr/bin/env php\n<?php Phar::mapPhar('phycode.phar'); require 'phar://phycode.phar/bin/phycode'; __HALT_COMPILER();");
+    $phar->stopBuffering();
+    chmod($output, 0755);
+    fwrite(STDOUT, sprintf("%s: %d files, %.1f MB\n", $output, $files, filesize($output) / 1048576));
+} catch (Throwable $error) {
+    fwrite(STDERR, 'build-phar: ' . $error->getMessage() . "\n");
+    $remove($stage);
+    exit(1);
+}
+$remove($stage);

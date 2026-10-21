@@ -1,0 +1,16 @@
+data: {"id":"gen-1","object":"chat.completion.chunk","model":"openai/gpt-oss-120b","choices":[{"index":0,"delta":{"role":"assistant","reasoning":"The user asks for a file. ","reasoning_details":[{"type":"reasoning.text","text":"The user asks for a file. ","format":"unknown","index":0}]},"finish_reason":null}]}
+
+data: {"id":"gen-1","object":"chat.completion.chunk","model":"openai/gpt-oss-120b","choices":[{"index":0,"delta":{"reasoning":"I should read it.","reasoning_details":[{"type":"reasoning.text","text":"I should read it.","format":"unknown","index":0}]},"finish_reason":null}]}
+
+data: {"id":"gen-1","object":"chat.completion.chunk","model":"openai/gpt-oss-120b","choices":[{"index":0,"delta":{"reasoning_details":[{"type":"reasoning.text","text":"","signature":"sig-1","format":"unknown","index":0},{"type":"reasoning.encrypted","data":"ZW5j","format":"unknown","index":1}]},"finish_reason":null}]}
+
+data: {"id":"gen-1","object":"chat.completion.chunk","model":"openai/gpt-oss-120b","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"read","arguments":"{\"path\":"}}]},"finish_reason":null}]}
+
+data: {"id":"gen-1","object":"chat.completion.chunk","model":"openai/gpt-oss-120b","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"a.txt\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"gen-1","object":"chat.completion.chunk","model":"openai/gpt-oss-120b","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: {"id":"gen-1","object":"chat.completion.chunk","model":"openai/gpt-oss-120b","choices":[],"usage":{"prompt_tokens":40,"completion_tokens":12,"total_tokens":52}}
+
+data: [DONE]
+

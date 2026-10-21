@@ -1,0 +1,24 @@
+{
+  "success": true,
+  "data": {
+    "web": [
+      {
+        "url": "https://en.wikipedia.org/wiki/Web_search_engine",
+        "title": "Web search engine - Wikipedia",
+        "description": "A web search engine is a software system designed to search for information on the World Wide Web."
+      },
+      {
+        "url": "https://example.com/how-search-works",
+        "title": "How a search engine works",
+        "description": "Crawlers fetch pages, and an index records which words appear on which pages."
+      },
+      {
+        "url": "https://example.org/no-description",
+        "title": "A page without a description",
+        "description": ""
+      }
+    ]
+  },
+  "creditsUsed": 1,
+  "id": "0c7e2a9d-5b1f-4e8a-9c3d-2f6b7a1e4d90"
+}

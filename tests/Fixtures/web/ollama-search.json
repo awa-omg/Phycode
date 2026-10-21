@@ -1,0 +1,19 @@
+{
+  "results": [
+    {
+      "title": "Web search engine - Wikipedia",
+      "url": "https://en.wikipedia.org/wiki/Web_search_engine",
+      "content": "A web search engine is a software system designed to search for information on the World Wide Web."
+    },
+    {
+      "title": "Python Web Frameworks",
+      "url": "https://example.com/python-frameworks",
+      "content": "Main snippet text about frameworks for building web applications in Python."
+    },
+    {
+      "title": "How search engines rank pages",
+      "url": "https://example.net/ranking",
+      "content": "An overview of crawling, indexing and ranking, written for developers."
+    }
+  ]
+}

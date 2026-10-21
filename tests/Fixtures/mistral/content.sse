@@ -1,0 +1,9 @@
+data: {"id":"m-1","object":"chat.completion.chunk","model":"mistral-small-latest","choices":[{"index":0,"delta":{"role":"assistant","content":[{"type":"thinking","thinking":[{"type":"text","text":"17 * 23 = 391."}]}]},"finish_reason":null}]}
+
+data: {"id":"m-1","object":"chat.completion.chunk","model":"mistral-small-latest","choices":[{"index":0,"delta":{"content":[{"type":"thinking","thinking":[]},{"type":"text","text":"The answer is 391."}]},"finish_reason":null}]}
+
+data: {"id":"m-1","object":"chat.completion.chunk","model":"mistral-small-latest","choices":[{"index":0,"delta":{"content":" Done."},"finish_reason":null}]}
+
+data: {"id":"m-1","object":"chat.completion.chunk","model":"mistral-small-latest","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: {"id":"m-1","object":"chat.completion.chunk","model":"mistral-small-latest","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":20,"total_tokens":32}}

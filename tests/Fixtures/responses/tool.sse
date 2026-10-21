@@ -1,0 +1,30 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_LbfsLhOjpo9i89RE3d7tqy4cUxrLTeZe","object":"response","status":"in_progress"}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","response":{"id":"resp_LbfsLhOjpo9i89RE3d7tqy4cUxrLTeZe","object":"response","status":"in_progress"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","item":{"id":"fc_BtZ9WQ5RFHGMYHQSqbrwDV1EW9QTBfyH","arguments":"","call_id":"call_BtZ9WQ5RFHGMYHQSqbrwDV1EW9QTBfyH","name":"get_weather","type":"function_call","status":"in_progress"}}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","delta":"{","item_id":"fc_BtZ9WQ5RFHGMYHQSqbrwDV1EW9QTBfyH"}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","delta":"\"city\":\"","item_id":"fc_BtZ9WQ5RFHGMYHQSqbrwDV1EW9QTBfyH"}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","delta":"Madrid","item_id":"fc_BtZ9WQ5RFHGMYHQSqbrwDV1EW9QTBfyH"}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","delta":"\"","item_id":"fc_BtZ9WQ5RFHGMYHQSqbrwDV1EW9QTBfyH"}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","delta":"}","item_id":"fc_BtZ9WQ5RFHGMYHQSqbrwDV1EW9QTBfyH"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","item":{"id":"fc_BtZ9WQ5RFHGMYHQSqbrwDV1EW9QTBfyH","type":"function_call","status":"completed","arguments":"{\"city\":\"Madrid\"}","call_id":"call_BtZ9WQ5RFHGMYHQSqbrwDV1EW9QTBfyH","name":"get_weather"}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_LbfsLhOjpo9i89RE3d7tqy4cUxrLTeZe","object":"response","created_at":1792427570,"status":"completed","model":"qwen35-2b","output":[{"id":"fc_BtZ9WQ5RFHGMYHQSqbrwDV1EW9QTBfyH","type":"function_call","status":"completed","arguments":"{\"city\":\"Madrid\"}","call_id":"call_BtZ9WQ5RFHGMYHQSqbrwDV1EW9QTBfyH","name":"get_weather"}],"usage":{"input_tokens":309,"output_tokens":26,"total_tokens":335,"input_tokens_details":{"cached_tokens":305}}},"timings":{"cache_n":305,"prompt_n":4,"prompt_ms":93.216,"prompt_per_token_ms":23.304,"prompt_per_second":42.911088225197396,"predicted_n":26,"predicted_ms":1845.989,"predicted_per_token_ms":73.83956,"predicted_per_second":13.54287593263015}}
+

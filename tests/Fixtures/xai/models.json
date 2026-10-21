@@ -1,0 +1,8 @@
+{
+  "object": "list",
+  "data": [
+    {"id": "grok-4.6", "object": "model", "created": 1767225600, "owned_by": "xai", "capabilities": {"reasoning_effort": ["low", "medium", "high", "xhigh"]}},
+    {"id": "grok-4.5", "object": "model", "created": 1765584000, "owned_by": "xai", "capabilities": {"reasoning_effort": ["low", "medium", "high"]}},
+    {"id": "grok-4-1-fast", "object": "model", "created": 1763510400, "owned_by": "xai"}
+  ]
+}

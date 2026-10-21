@@ -1,0 +1,11 @@
+{
+    "callResult": {
+        "content": [
+            {"type": "text", "text": "first line"},
+            {"type": "image", "data": "aGVsbG8gd29ybGQ=", "mimeType": "image/png"},
+            {"type": "resource_link", "name": "notes", "uri": "file:///notes.md"},
+            {"type": "text", "text": "second line"}
+        ],
+        "isError": false
+    }
+}

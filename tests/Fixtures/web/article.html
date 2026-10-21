@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>  Fixture   article: the   basics </title>
+  <style>body { color: red; }</style>
+  <script>var tracker = "SCRIPT-TEXT-MUST-NOT-APPEAR";</script>
+</head>
+<body>
+  <nav><a href="/">Home</a> <a href="/menu">Menu</a></nav>
+  <aside>ASIDE-TEXT-MUST-NOT-APPEAR</aside>
+  <main>
+    <h1>Getting   started</h1>
+    <p>Phycode reads   pages &amp; keeps the text. See the <a href="docs/install.html">install guide</a>,
+    or the <a href="https://example.org/reference?x=1&amp;y=2">reference</a>.</p>
+    <h2>Steps</h2>
+    <ol>
+      <li>Download the archive.</li>
+      <li>Unpack it and run <code>make install</code>.
+        <ul>
+          <li>Needs PHP 8.4.</li>
+          <li>Needs curl.</li>
+        </ul>
+      </li>
+      <li>Done.</li>
+    </ol>
+    <h2>Notes</h2>
+    <ul>
+      <li>Script link: <a href="javascript:alert(1)">click</a>.</li>
+      <li>Mail: <a href="mailto:team@example.org">write to us</a>.</li>
+    </ul>
+    <h3>Code</h3>
+    <pre><code class="language-php">function greet(string $name): string {
+    return "hi {$name}";
+}</code></pre>
+    <p>Use <code>`</code> to quote a backtick.</p>
+    <blockquote><p>Quoted line.</p></blockquote>
+    <table>
+      <tr><th>Name</th><th>Size</th></tr>
+      <tr><td>alpha</td><td>1 MB</td></tr>
+    </table>
+    <p>Non&nbsp;breaking&nbsp;space &copy; 2026.</p>
+  </main>
+  <footer>FOOTER-TEXT-MUST-NOT-APPEAR</footer>
+  <script>document.write("ALSO-NOT-SHOWN")</script>
+  <noscript>NOSCRIPT-TEXT-MUST-NOT-APPEAR</noscript>
+</body>
+</html>

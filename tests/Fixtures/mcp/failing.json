@@ -1,0 +1,6 @@
+{
+    "callResult": {
+        "content": [{"type": "text", "text": "the file is locked"}],
+        "isError": true
+    }
+}

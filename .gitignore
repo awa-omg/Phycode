@@ -1,0 +1,6 @@
+/vendor/
+/bin/phycode-tui
+/tui/bin/
+/.phycode/
+/.phpunit.cache/
+*.log

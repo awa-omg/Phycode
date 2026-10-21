@@ -1,0 +1,30 @@
+{
+    "name": "phycode/phycode",
+    "description": "Local coding agent for llama.cpp servers with multi-agent delegation",
+    "type": "project",
+    "license": "proprietary",
+    "require": {
+        "php": ">=8.4.1",
+        "ext-curl": "*",
+        "ext-json": "*",
+        "ext-mbstring": "*",
+        "ext-posix": "*",
+        "symfony/yaml": "^7.0 || ^8.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Phycode\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Phycode\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

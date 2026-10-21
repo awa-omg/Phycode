@@ -1,0 +1,30 @@
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_doc1","object":"response","created_at":1792427000,"status":"in_progress","model":"gpt-doc","output":[],"usage":null}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"id":"rs_doc1","type":"reasoning","summary":[],"encrypted_content":null,"status":"in_progress"}}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":2,"item_id":"rs_doc1","output_index":0,"summary_index":0,"delta":"Madrid needs a weather lookup."}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":3,"output_index":0,"item":{"id":"rs_doc1","type":"reasoning","summary":[{"type":"summary_text","text":"Madrid needs a weather lookup."}],"encrypted_content":"gAAAAABdocEncryptedReasoning","status":"completed"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":4,"output_index":1,"item":{"id":"fc_doc1","type":"function_call","status":"in_progress","arguments":"","call_id":"call_doc1","name":"get_weather"}}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","sequence_number":5,"item_id":"fc_doc1","output_index":1,"delta":"{\"city\":"}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","sequence_number":6,"item_id":"fc_doc1","output_index":1,"delta":"\"Madrid\"}"}
+
+event: response.function_call_arguments.done
+data: {"type":"response.function_call_arguments.done","sequence_number":7,"item_id":"fc_doc1","output_index":1,"arguments":"{\"city\":\"Madrid\"}"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":8,"output_index":1,"item":{"id":"fc_doc1","type":"function_call","status":"completed","arguments":"{\"city\":\"Madrid\"}","call_id":"call_doc1","name":"get_weather"}}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":9,"response":{"id":"resp_doc1","object":"response","created_at":1792427000,"status":"completed","model":"gpt-doc","output":[],"usage":{"input_tokens":80,"input_tokens_details":{"cached_tokens":64},"output_tokens":40,"output_tokens_details":{"reasoning_tokens":25},"total_tokens":120}}}
+

@@ -1,0 +1,4 @@
+{
+    "stderr": "fatal: echo tool exploded",
+    "crashOn": "tools/call"
+}

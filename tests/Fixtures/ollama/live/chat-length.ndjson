@@ -1,0 +1,9 @@
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:26.135483296Z","message":{"role":"assistant","content":"##"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:26.874194788Z","message":{"role":"assistant","content":" La"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:26.874480773Z","message":{"role":"assistant","content":" Fotos"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:26.874626336Z","message":{"role":"assistant","content":"ínt"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:26.874753144Z","message":{"role":"assistant","content":"esis"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:28.203483996Z","message":{"role":"assistant","content":":"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:28.20350246Z","message":{"role":"assistant","content":" El"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:28.250755187Z","message":{"role":"assistant","content":" Pro"},"done":false}
+{"model":"gemma4:e2b","created_at":"2026-10-19T11:07:28.250809038Z","message":{"role":"assistant","content":""},"done":true,"done_reason":"length","total_duration":2797759843,"load_duration":2985976,"prompt_eval_count":20,"prompt_eval_duration":631351000,"eval_count":8,"eval_duration":2114407000}

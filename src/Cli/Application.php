@@ -698,7 +698,7 @@ final class Application
         } else {
             $info('PHP advisory', 'warning: ' . $advisory);
         }
-        foreach (['curl', 'json', 'mbstring', 'posix'] as $extension) {
+        foreach (['curl', 'dom', 'filter', 'json', 'mbstring', 'openssl', 'posix'] as $extension) {
             $line("extension {$extension}", extension_loaded($extension));
         }
         $write('[--] extension pcntl          ' . (extension_loaded('pcntl') ? 'available (Ctrl+C cancels turns)' : 'missing (Ctrl+C ends the process)') . "\n");

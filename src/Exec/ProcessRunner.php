@@ -19,10 +19,8 @@ final class ProcessRunner implements CommandRunner, Backgroundable
         if ($argv === []) {
             throw new PhycodeException('empty command');
         }
-        $timeoutBinary = self::which('timeout');
-        $command = $timeoutBinary !== null
-            ? [$timeoutBinary, '--signal=KILL', '--kill-after=2', (string) max(1, $timeout), ...$argv]
-            : $argv;
+        $timeoutBinary = self::timeoutProgram();
+        $command = Launch::command($argv, $timeout, 'KILL', 2);
 
         $pipes = [];
         $started = microtime(true);
@@ -41,7 +39,7 @@ final class ProcessRunner implements CommandRunner, Backgroundable
         $buffers = [1 => self::emptyBuffer(), 2 => self::emptyBuffer()];
         $headMax = (int) ($maxBytes * 0.7);
         $tailMax = $maxBytes - $headMax;
-        $hardDeadline = $started + $timeout + 10;
+        $hardDeadline = $started + $timeout + ($timeoutBinary !== null ? 10 : 0);
         $interrupted = null;
         $stopping = null;
         $exitCode = null;
@@ -78,21 +76,21 @@ final class ProcessRunner implements CommandRunner, Backgroundable
             if ($interrupted === null && $cancel !== null && $cancel->isCancelled()) {
                 $interrupted = 'cancelled';
                 $stopping = $now;
-                self::signal($pid, $grouped, self::TERM);
+                self::signal($pid, self::TERM, $status['running']);
             } elseif ($interrupted === null && $now > $hardDeadline) {
                 $interrupted = 'timeout';
-                self::signal($pid, $grouped, self::KILL);
+                self::signal($pid, self::KILL, $status['running']);
                 if ($status['running']) {
                     proc_terminate($process, self::KILL);
                 }
             }
             if ($stopping !== null && $now - $stopping >= self::TERM_GRACE_SECONDS) {
-                self::signal($pid, $grouped, self::KILL);
+                self::signal($pid, self::KILL, $status['running']);
                 $stopping = null;
             }
             if (!$status['running']) {
                 $exitedAt ??= $now;
-                $settled = $open === [] && ($stopping === null || !self::alive($pid, $grouped));
+                $settled = $open === [] && ($stopping === null || !self::alive($pid, false));
                 if ($settled || ($stopping === null && $now - $exitedAt > self::PIPE_GRACE_SECONDS)) {
                     break;
                 }
@@ -111,7 +109,7 @@ final class ProcessRunner implements CommandRunner, Backgroundable
             $signal ??= $status['signaled'] ? $status['termsig'] : null;
         }
         if ($grouped) {
-            self::signal($pid, true, self::KILL);
+            self::signal($pid, self::KILL, false);
         }
         proc_close($process);
 
@@ -130,11 +128,8 @@ final class ProcessRunner implements CommandRunner, Backgroundable
         if ($argv === []) {
             throw new PhycodeException('empty command');
         }
-        $timeoutBinary = self::which('timeout');
-        if ($timeoutBinary === null) {
-            throw new PhycodeException('a command in the background needs the timeout program (GNU coreutils)');
-        }
-        $command = [$timeoutBinary, '--signal=TERM', '--kill-after=5', (string) max(1, $lifetime), ...$argv];
+        $timeoutBinary = self::timeoutProgram();
+        $command = Launch::command($argv, $lifetime, 'TERM', 5);
         $pipes = [];
         $process = @proc_open(
             $command,
@@ -153,7 +148,12 @@ final class ProcessRunner implements CommandRunner, Backgroundable
             throw new PhycodeException('cannot start ' . $argv[0]);
         }
 
-        return new RunningProcess($process, $pid);
+        return new RunningProcess($process, $pid, $timeoutBinary === null ? microtime(true) + max(1, $lifetime) : null);
+    }
+
+    public static function timeoutProgram(): ?string
+    {
+        return PHP_OS_FAMILY === 'BSD' ? null : self::which('timeout') ?? self::which('gtimeout');
     }
 
     public static function which(string $binary): ?string
@@ -171,16 +171,14 @@ final class ProcessRunner implements CommandRunner, Backgroundable
         return null;
     }
 
-    private static function signal(int $pid, bool $grouped, int $signal): void
+    private static function signal(int $pid, int $signal, bool $owned): void
     {
-        if ($pid > 1) {
-            @posix_kill($grouped ? -$pid : $pid, $signal);
-        }
+        ProcessTree::signal($pid, $signal, $owned);
     }
 
-    private static function alive(int $pid, bool $grouped): bool
+    private static function alive(int $pid, bool $owned): bool
     {
-        return $pid > 1 && @posix_kill($grouped ? -$pid : $pid, 0);
+        return ProcessTree::alive($pid, $owned);
     }
 
     private static function environment(array $extra): array
@@ -188,8 +186,7 @@ final class ProcessRunner implements CommandRunner, Backgroundable
         $environment = [
             'PATH' => (string) (getenv('PATH') ?: '/usr/local/bin:/usr/bin:/bin'),
             'HOME' => (string) (getenv('HOME') ?: '/root'),
-            'LANG' => 'C.UTF-8',
-            'LC_ALL' => 'C.UTF-8',
+            ...Locale::variables(),
             'TERM' => 'dumb',
             'NO_COLOR' => '1',
             'PYTHONUNBUFFERED' => '1',

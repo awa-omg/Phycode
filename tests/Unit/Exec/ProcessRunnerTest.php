@@ -77,7 +77,7 @@ final class ProcessRunnerTest extends TestCase
 
     public function testACommandRunsInAProcessGroupOfItsOwn(): void
     {
-        $result = (new ProcessRunner())->run(['bash', '-c', 'cut -d " " -f5 /proc/$$/stat'], sys_get_temp_dir(), 5, 4096);
+        $result = (new ProcessRunner())->run(['bash', '-c', 'if [ -r /proc/$$/stat ]; then cut -d " " -f5 /proc/$$/stat; else ps -o pgid= -p $$; fi'], sys_get_temp_dir(), 5, 4096);
 
         self::assertNotSame(posix_getpgrp(), (int) trim($result->stdout));
     }
@@ -143,13 +143,9 @@ final class ProcessRunnerTest extends TestCase
 
     private function isAlive(int $pid): bool
     {
-        $stat = @file_get_contents('/proc/' . $pid . '/stat');
-        if ($stat === false) {
-            return false;
-        }
-        $state = substr(trim(substr($stat, (int) strrpos($stat, ')') + 1)), 0, 1);
+        $state = Kit::processState($pid);
 
-        return $state !== 'Z' && $state !== 'X';
+        return $state !== null && $state !== 'Z' && $state !== 'X';
     }
 
     public function testWorkingDirectoryIsRespected(): void

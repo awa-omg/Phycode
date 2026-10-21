@@ -13,9 +13,10 @@ final class RunningProcess
     private ?int $exitCode = null;
     private ?int $signal = null;
     private bool $closed = false;
+    private bool $limitPassed = false;
     private ?\Closure $onClose = null;
 
-    public function __construct(private $process, public readonly int $pid)
+    public function __construct(private $process, public readonly int $pid, private ?float $deadline = null)
     {
     }
 
@@ -31,6 +32,14 @@ final class RunningProcess
         }
         $status = proc_get_status($this->process);
         if ($status['running']) {
+            if ($this->deadline !== null && microtime(true) >= $this->deadline) {
+                $this->deadline = null;
+                $this->limitPassed = true;
+                $this->stop();
+
+                return false;
+            }
+
             return true;
         }
         $this->exitCode = $status['exitcode'];
@@ -38,6 +47,11 @@ final class RunningProcess
         $this->close();
 
         return false;
+    }
+
+    public function limitPassed(): bool
+    {
+        return $this->limitPassed;
     }
 
     public function exitCode(): ?int
@@ -57,13 +71,13 @@ final class RunningProcess
         if ($this->closed) {
             return;
         }
-        @posix_kill(-$this->pid, self::TERM);
+        ProcessTree::signal($this->pid, self::TERM);
         $deadline = microtime(true) + self::TERM_GRACE_SECONDS;
         while ($this->running() && microtime(true) < $deadline) {
             usleep(50000);
         }
         if (!$this->closed) {
-            @posix_kill(-$this->pid, self::KILL);
+            ProcessTree::signal($this->pid, self::KILL);
             $status = proc_get_status($this->process);
             $this->exitCode = -1;
             $this->signal = self::KILL;
@@ -80,7 +94,7 @@ final class RunningProcess
             return;
         }
         $this->closed = true;
-        @posix_kill(-$this->pid, self::KILL);
+        ProcessTree::signal($this->pid, self::KILL, false);
         proc_close($this->process);
         if ($this->onClose !== null) {
             ($this->onClose)();

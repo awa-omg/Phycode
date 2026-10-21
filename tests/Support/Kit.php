@@ -26,6 +26,7 @@ final class Kit
     {
         $path = self::BASE . '/phpunit-' . $name . '-' . bin2hex(random_bytes(4));
         mkdir($path, 0700, true);
+        $path = realpath($path) ?: $path;
         if (self::$created === []) {
             register_shutdown_function([self::class, 'removeCreated']);
             if (function_exists('pcntl_signal')) {
@@ -107,11 +108,37 @@ final class Kit
         return dirname(__DIR__, 2) . '/resources/agents';
     }
 
+    public static function commandLines(): array
+    {
+        if (is_readable('/proc/self/cmdline')) {
+            $lines = [];
+            foreach (glob('/proc/[0-9]*/cmdline') ?: [] as $file) {
+                $lines[] = implode(' ', explode("\0", rtrim((string) @file_get_contents($file), "\0")));
+            }
+
+            return $lines;
+        }
+        exec('ps -ax -o command= 2>/dev/null', $lines);
+
+        return $lines;
+    }
+
+    public static function processState(int $pid): ?string
+    {
+        if (is_readable('/proc/self/stat')) {
+            $stat = @file_get_contents('/proc/' . $pid . '/stat');
+
+            return $stat === false ? null : substr(trim(substr($stat, (int) strrpos($stat, ')') + 1)), 0, 1);
+        }
+        $state = trim((string) shell_exec('ps -o stat= -p ' . $pid . ' 2>/dev/null'));
+
+        return $state === '' ? null : $state[0];
+    }
+
     public static function sleeping(string $seconds): bool
     {
-        foreach (glob('/proc/[0-9]*/cmdline') ?: [] as $file) {
-            $argv = explode("\0", (string) @file_get_contents($file));
-            if (count($argv) >= 2 && basename($argv[0]) === 'sleep' && $argv[1] === $seconds) {
+        foreach (self::commandLines() as $line) {
+            if (preg_match('~^(?:\S*/)?sleep ' . preg_quote($seconds, '~') . '$~', trim($line)) === 1) {
                 return true;
             }
         }

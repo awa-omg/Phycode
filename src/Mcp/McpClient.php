@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Phycode\Mcp;
 
+use Phycode\Exec\Locale;
 use Phycode\Support\Json;
 use Phycode\Support\PhycodeException;
 use Phycode\Support\Redaction;
@@ -91,8 +92,7 @@ final class McpClient extends McpConnection
         $environment = [
             'PATH' => (string) (getenv('PATH') ?: '/usr/local/bin:/usr/bin:/bin'),
             'HOME' => (string) (getenv('HOME') ?: '/root'),
-            'LANG' => 'C.UTF-8',
-            'LC_ALL' => 'C.UTF-8',
+            ...Locale::variables(),
             'TERM' => 'dumb',
             'PYTHONUNBUFFERED' => '1',
         ];

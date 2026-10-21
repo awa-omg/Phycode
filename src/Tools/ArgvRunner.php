@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Phycode\Tools;
 
+use Phycode\Exec\Launch;
+use Phycode\Exec\Locale;
 use Phycode\Exec\ProcessResult;
 use Phycode\Exec\ProcessRunner;
+use Phycode\Exec\ProcessTree;
 use Phycode\Support\Cancellation;
 use Phycode\Support\PhycodeException;
 
@@ -26,10 +29,8 @@ final class ArgvRunner
             }
         }
         $program = self::program($argv[0], $cwd);
-        $timeout = ProcessRunner::which('timeout');
-        $command = $timeout !== null
-            ? [$timeout, '--signal=KILL', '--kill-after=2', (string) ($seconds + 1), $program, ...array_slice($argv, 1)]
-            : [$program, ...array_slice($argv, 1)];
+        $timeout = ProcessRunner::timeoutProgram();
+        $command = Launch::command([$program, ...array_slice($argv, 1)], $seconds + 1, 'KILL', 2);
 
         $pipes = [];
         $started = microtime(true);
@@ -101,7 +102,7 @@ final class ArgvRunner
                     $interrupted = 'timeout';
                 }
                 if ($interrupted !== null) {
-                    self::stop($pid, $grouped);
+                    ProcessTree::signal($pid, self::KILL);
                     break;
                 }
             }
@@ -119,7 +120,7 @@ final class ArgvRunner
         $status = proc_get_status($process);
         $exitCode ??= $status['running'] ? -1 : $status['exitcode'];
         if ($grouped) {
-            self::stop($pid, true);
+            ProcessTree::signal($pid, self::KILL, false);
         }
         proc_close($process);
 
@@ -156,20 +157,12 @@ final class ArgvRunner
         return mb_scrub($buffer[0] . $middle, 'UTF-8');
     }
 
-    private static function stop(int $pid, bool $grouped): void
-    {
-        if ($pid > 1) {
-            @posix_kill($grouped ? -$pid : $pid, self::KILL);
-        }
-    }
-
     private static function environment(): array
     {
         $environment = [
             'PATH' => (string) (getenv('PATH') ?: '/usr/local/bin:/usr/bin:/bin'),
             'HOME' => (string) (getenv('HOME') ?: '/root'),
-            'LANG' => 'C.UTF-8',
-            'LC_ALL' => 'C.UTF-8',
+            ...Locale::variables(),
             'TERM' => 'dumb',
         ];
         $temporary = getenv('TMPDIR');

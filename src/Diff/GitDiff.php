@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Phycode\Diff;
 
+use Phycode\Exec\Locale;
 use Phycode\Exec\ProcessResult;
 use Phycode\Exec\ProcessRunner;
 use Phycode\Support\PhycodeException;
@@ -205,8 +206,7 @@ final class GitDiff
         return [
             'PATH' => (string) (getenv('PATH') ?: '/usr/local/bin:/usr/bin:/bin'),
             'HOME' => (string) (getenv('HOME') ?: '/root'),
-            'LANG' => 'C.UTF-8',
-            'LC_ALL' => 'C.UTF-8',
+            ...Locale::variables(),
             'GIT_TERMINAL_PROMPT' => '0',
             'GIT_PAGER' => 'cat',
             'PAGER' => 'cat',

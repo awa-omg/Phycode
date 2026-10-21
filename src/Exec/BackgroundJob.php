@@ -57,7 +57,8 @@ final class BackgroundJob
             return "stopped: {$this->stoppedBecause} after {$seconds}s";
         }
         $code = $this->process->exitCode();
-        $how = $code !== null ? "exited with code {$code}" . ($code === 124 ? ' (its time limit passed)' : '') : 'ended on signal ' . ($this->process->signal() ?? '?');
+        $limit = $code === 124 || $this->process->limitPassed() ? ' (its time limit passed)' : '';
+        $how = $code !== null ? "exited with code {$code}{$limit}" : 'ended on signal ' . ($this->process->signal() ?? '?') . $limit;
 
         return $how . " after {$seconds}s";
     }

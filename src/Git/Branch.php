@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Phycode\Git;
 
+use Phycode\Exec\Locale;
+
 final class Branch
 {
     private const TIMEOUT_SECONDS = 2.0;
@@ -51,8 +53,7 @@ final class Branch
         return [
             'PATH' => (string) (getenv('PATH') ?: '/usr/local/bin:/usr/bin:/bin'),
             'HOME' => (string) (getenv('HOME') ?: '/root'),
-            'LANG' => 'C.UTF-8',
-            'LC_ALL' => 'C.UTF-8',
+            ...Locale::variables(),
         ];
     }
 }

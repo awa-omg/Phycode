@@ -1,494 +1,616 @@
 # phycode
 
-phycode es un agente de código para la terminal. Trabaja sobre una carpeta de proyecto: lee y cambia archivos, busca en el código y ejecuta comandos. Pide permiso antes de escribir o ejecutar, salvo que lo cambies en la configuración.
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![PHP 8.4.1+](https://img.shields.io/badge/PHP-8.4.1%2B-777BB4.svg)](https://www.php.net/)
+[![Go 1.26+](https://img.shields.io/badge/Go-1.26%2B-00ADD8.svg)](https://go.dev/)
 
-Está pensado para modelos locales servidos con llama.cpp u Ollama. También funciona con OpenAI, Anthropic, OpenRouter, Groq y cualquier servidor compatible con la API de OpenAI.
+Local coding agent for llama.cpp servers with multi-agent delegation
 
-Estado: versión 0.1.0, en fase temprana. Se ha probado con Qwen3.5 0.8B y 2B (Q8_0) sobre llama.cpp b11721. Los modelos pequeños siguen los protocolos de herramientas de forma irregular, así que revisa cada cambio que propongan.
+phycode runs in your terminal and works on one project folder at a time. It reads and edits files, searches the code, and runs commands. It asks for approval before it changes anything, unless you configure it otherwise. phycode targets local models served by llama.cpp and Ollama. It also works with OpenAI, Anthropic, OpenRouter, Groq, and any server that implements the OpenAI chat completions API.
 
-## Qué hace
+Version 0.1.0 is an early release. It has been tested with Qwen3.5 0.8B and 2B (Q8_0) on llama.cpp b11721. Small models follow tool-calling protocols unevenly, so review every change they propose.
 
-- Trabaja sobre una carpeta de proyecto: lee, busca, edita, crea, mueve y borra archivos, y ejecuta comandos de shell, Python y JavaScript.
-- Usa git y GitHub (`gh`) con una lista blanca de operaciones. Las que escriben piden permiso.
-- Delega en subagentes con contexto propio. Un subagente nunca tiene más herramientas ni menos restricciones que su padre.
-- Puede ejecutar comandos en un sandbox: bubblewrap, Podman o Docker.
-- Se conecta a servidores MCP por stdio o HTTP, con OAuth cuando el servidor lo pide.
-- Busca en la web con siete backends y lee páginas con una guardia SSRF.
-- Carga skills en formato `SKILL.md`, ejecuta hooks en los eventos del agente y lanza comprobaciones después de cada edición.
-- Revisa cambios con cuatro revisores y un refutador (`/review`), investiga en varias rondas (`/deepresearch`) y responde preguntas laterales sin tocar la conversación (`/btw`).
-- Compacta el contexto cuando se llena y guarda las sesiones para retomarlas.
-- Funciona desde la terminal (chat de línea o pantalla completa), desde scripts (`run`, con salida JSON y JSON Schema), desde editores (ACP) y como demonio para varios clientes (`serve`).
+## Table of contents
 
-## Requisitos
+- [Security](#security)
+- [Background](#background)
+- [Install](#install)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [Models and providers](#models-and-providers)
+- [Permissions](#permissions)
+- [Sandboxing](#sandboxing)
+- [Tools](#tools)
+- [Agents and subagents](#agents-and-subagents)
+- [Skills](#skills)
+- [MCP servers](#mcp-servers)
+- [Web access](#web-access)
+- [Hooks, checks, and custom tools](#hooks-checks-and-custom-tools)
+- [Sessions, context, and compaction](#sessions-context-and-compaction)
+- [Integrations](#integrations)
+- [Architecture](#architecture)
+- [Development](#development)
+- [Known limitations](#known-limitations)
+- [Comparison with other coding agents](#comparison-with-other-coding-agents)
+- [Contributing](#contributing)
+- [License](#license)
 
-- PHP 8.4.1 o posterior, con las extensiones `curl`, `json`, `mbstring` y `posix`. `pcntl` es opcional: sin ella, Ctrl+C termina el proceso en lugar de cancelar el turno, y `serve` no arranca.
-- Un servidor de modelos: `llama-server` (con `--jinja` para las llamadas nativas a herramientas), Ollama, un endpoint compatible con OpenAI, o un proveedor en la nube con su clave.
-- Comandos del sistema: `timeout`, `bash` y `git`. Opcionales: `rg` (ripgrep, que usa `grep` si está instalado), `python3` y `node` (para `run_code`), y `gh` (para `gh_read` y `gh_write`).
-- Go 1.26 o posterior, solo para compilar la interfaz de pantalla completa.
-- Para sandboxes: `bwrap` (y `socat` si usas `sandbox.allow_domains`), o Podman o Docker.
+## Security
 
-## Instalación
+phycode treats model output and external content as untrusted input. A model can be steered by instructions hidden in web pages, repository files, MCP responses, or skills. phycode applies the following controls:
+
+- Permission modes decide when a write or a command needs your approval. The default mode, `ask`, asks before each change.
+- A hard line refuses destructive commands in every mode. Inside a Podman or Docker sandbox, the container is the boundary instead.
+- Reading, searching, writing, moving, or deleting a file with a secret-like name requires approval in every mode, including `yolo`.
+- Shell commands can run in a bubblewrap, Podman, or Docker sandbox, which isolates them from the host.
+- Configured API keys are redacted from tool output, error messages, and saved sessions.
+
+Approval prompts do not isolate shell commands. For projects you do not trust, use a container sandbox. Run phycode on a PHP release that includes the security fixes that PHP published on 21 October 2026.
+
+## Background
+
+phycode is designed for local models. The agent runtime is written in PHP 8.4. It contains the agent loop, the tools, the model clients, the configuration, the sessions, and the JSON-lines protocol that the full-screen interface uses. The interface is a separate Go program built with Bubble Tea, Lip Gloss, and Glamour. It starts the PHP backend with `phycode rpc` and exchanges JSON lines with it.
+
+Three rules shape the code:
+
+1. A session works inside one project folder. Paths outside that folder are refused, unless you add a read-only folder with `--add-dir`.
+2. Settings that widen access, such as servers, keys, permissions, and sandboxes, are read from the global configuration only. A cloned project cannot change them.
+3. A subagent starts with a fresh conversation and never receives more permissions than its parent.
+
+The optional [gentle-ai](https://github.com/Gentleman-Programming/gentle-ai) integration adds commands for an MIT-licensed tool that installs skills, personas, and MCP presets for coding agents.
+
+## Install
+
+### Requirements
+
+| Component | Requirement |
+| --- | --- |
+| PHP | 8.4.1 or later, with the `curl`, `json`, `mbstring`, and `posix` extensions. The `pcntl` extension is optional, but the `serve` command requires it. Without `pcntl`, Ctrl+C ends the process instead of canceling the current turn. |
+| Composer | 2.x |
+| Model server | llama.cpp `llama-server` (start it with `--jinja` for native tool calls), Ollama, an OpenAI-compatible endpoint, or a hosted provider with an API key |
+| Terminal UI | Go 1.26 or later. With the default `GOTOOLCHAIN=auto`, an older Go downloads the toolchain named in `tui/go.mod`. |
+| System commands | `timeout`, `bash`, and `git`. Optional: `rg` (ripgrep), `python3` and `node` (for `run_code`), and `gh` (for the GitHub tools). |
+| Sandboxes | `bwrap` (with `socat` when you use `sandbox.allow_domains`), Podman, or Docker |
+
+### Install from source
+
+Clone the repository and install the PHP dependencies:
 
 ```sh
+git clone https://github.com/awa-omg/Phycode.git
+cd Phycode
 composer install
 chmod +x bin/phycode
-bin/phycode doctor --cwd /ruta/al/proyecto
+bin/phycode doctor --cwd /path/to/project
 ```
 
-La interfaz de pantalla completa se compila una vez:
+`doctor` checks the PHP runtime, the model server of the active profile, the sandbox, and the tools. Resolve each error it reports before you start a session.
+
+Add `bin/` to your `PATH` to run `phycode` from any folder. The examples in this document assume that.
+
+### Build the terminal UI
 
 ```sh
-cd tui && go build -o ../bin/phycode-tui ./cmd/phycode-tui
+cd tui
+go build -o ../bin/phycode-tui ./cmd/phycode-tui
 ```
 
-Sin ese binario, `phycode -t` usa la interfaz de respaldo en PHP.
+The Go module lives in `tui/`, so run Go commands from that folder. Without `bin/phycode-tui`, `phycode -t` falls back to the built-in PHP interface.
 
-`bin/build-phar` empaqueta `src`, `resources` y `vendor` en `build/phycode.phar`, sin dependencias de desarrollo.
-
-## Primeros pasos
-
-Arranca un servidor local con un modelo GGUF:
+### Build a PHAR archive
 
 ```sh
-llama-server -m Qwen3.5-2B-Q8_0.gguf --host 127.0.0.1 --port 8082 -c 16384 --jinja --alias qwen35-2b
+php bin/build-phar build/phycode.phar
 ```
 
-Deja la caché KV en f16. Las cachés cuantizadas empeoran las llamadas a herramientas.
-
-Crea `~/.config/phycode/config.json`:
-
-```json
-{
-  "default_profile": "qwen-2b",
-  "profiles": {
-    "qwen-2b": {
-      "base_url": "http://127.0.0.1:8082",
-      "model": "qwen35-2b",
-      "context_limit": 16384
-    }
-  }
-}
-```
-
-Después, desde la carpeta del proyecto:
+The script copies `src/`, `resources/`, and the launcher into a temporary folder, installs the production dependencies there, and writes a single archive to the path you give. Run the script with `php`. Check the result with:
 
 ```sh
-phycode doctor
-phycode -t
-phycode run "explica qué hace src/Agent/AgentRunner.php"
+php build/phycode.phar version
 ```
 
-`doctor` comprueba el servidor, el perfil, el sandbox y las herramientas. `-t` abre la interfaz de pantalla completa. `run` ejecuta una tarea y termina.
+## Usage
 
-## Configuración
+### Quick start
 
-Hay dos archivos de configuración:
+1. Start a model server. This example uses llama.cpp and a 2B model:
 
-- Global: `~/.config/phycode/config.json`, o `$XDG_CONFIG_HOME/phycode/config.json` si defines esa variable.
-- Del proyecto: `<proyecto>/.phycode/config.json`. Solo puede definir `limits`, `default_agent` y `subagents`. No puede elegir servidores, claves, permisos ni sandbox.
+   ```sh
+   llama-server -m Qwen3.5-2B-Q8_0.gguf --host 127.0.0.1 --port 8082 -c 16384 --jinja --alias qwen35-2b
+   ```
 
-Las variables `PHYCODE_BASE_URL` y `PHYCODE_MODEL` sustituyen los campos del perfil por defecto. `PHYCODE_PROFILE` elige el perfil por defecto. Si la configuración no define perfiles, esas dos variables crean un perfil llamado `env`, cuya clave sale de `PHYCODE_API_KEY`.
+   Keep the KV cache in f16. Quantized KV caches degrade tool calling.
 
-Secciones de primer nivel:
+2. Create `~/.config/phycode/config.json`:
 
-| Sección | Qué controla |
-|---|---|
-| `profiles`, `default_profile` | Servidores, modelos y opciones de cada perfil |
-| `permissions` | Modo de permisos (`mode`) |
-| `rules` | Reglas `allow`, `ask` y `deny` por herramienta |
-| `sandbox` | Dónde corren `bash` y `run_code`, con su imagen y su red |
-| `limits` | Turnos, tiempos y tamaños |
-| `hooks`, `checks` | Comandos en eventos del agente y después de cada edición |
-| `custom_tools` | Herramientas propias definidas por un comando |
-| `tools` | `disabled`: herramientas que no se ofrecen |
-| `mcp_servers`, `mcp` | Servidores MCP y búsqueda de herramientas |
-| `web` | Búsqueda y lectura web |
-| `skills` | `enabled`, `index` y `autonomy` de las skills |
-| `context`, `effort` | Ventana, compactación automática y esfuerzo por defecto |
-| `ui` | Tema, editor, vista de diferencias y expansión de subagentes |
-| `pricing` | Precios por modelo, para `/usage` |
-| `oracle` | Modelo más potente que el agente puede consultar |
-| `ssh`, `deploy` | Hosts SSH y objetivos de despliegue |
-| `gentle_ai` | Ruta del binario de gentle-ai y persona |
+   ```json
+   {
+     "default_profile": "qwen-2b",
+     "profiles": {
+       "qwen-2b": {
+         "base_url": "http://127.0.0.1:8082",
+         "model": "qwen35-2b",
+         "context_limit": 16384
+       }
+     }
+   }
+   ```
 
-Claves de un perfil:
+3. Open the full-screen interface from your project folder:
 
-| Clave | Qué hace |
-|---|---|
-| `base_url` | Obligatoria. `http://` solo para `localhost`, `127.0.0.1` o `::1`. Con clave, `https://`. También acepta `unix:///ruta.sock`. |
-| `model` | Obligatoria. Nombre del modelo en el servidor. |
-| `protocol` | `openai` (por defecto), `openai-responses`, `anthropic` u `ollama`. |
-| `tool_mode` | `auto` (por defecto), `native`, `text` o `none`. Ver Proveedores y modelos. |
-| `thinking` | Esfuerzo de razonamiento inicial: `none` (por defecto), `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `off` u `on`. |
-| `context_limit` | Ventana de contexto en tokens. Ollama la envía como `num_ctx`. |
-| `max_output_tokens` | Tokens máximos de salida, entre 16 y 100000. Por defecto, 2048. |
-| `token_param` | `max_tokens` o `max_completion_tokens`. Con `api.openai.com` se usa `max_completion_tokens`. |
-| `api_key_env`, `api_key_file`, `api_key_store`, `api_key_files` | Dónde está la clave. Nunca va en línea. |
-| `fallback` | Perfiles de respaldo, en orden. |
-| `vision` | `true` si el modelo lee imágenes. Hace falta para `--image` y `/image`. |
-| `keep_alive` | Solo Ollama. Por defecto, `5m`. |
-| `extra_body` | Campos extra de la petición. Se añaden al final y pueden sobrescribir los demás. |
-| `effort_format`, `effort_levels` | Cómo se envía el esfuerzo al proveedor. `effort_format` acepta `auto`, `openai`, `openrouter`, `deepseek`, `chat_template` y `none`. |
-| `prompt_cache`, `prompt_cache_ttl`, `prompt_cache_retention` | Caché de prompts. TTL `5m` o `1h`. Retención `in_memory` o `24h`. |
-| `compact_mode` | `auto` (por defecto), `shared` o `standalone`. |
-| `llama` | Datos de un `llama-server` local: `bin`, `model`, `args` y `env`. |
+   ```sh
+   cd /path/to/project
+   phycode -t
+   ```
 
-Las claves nunca van en línea en el JSON. Usa `api_key_env` (una variable de entorno), `api_key_file` (un archivo) o `api_key_store: true` (la bóveda de phycode). `phycode keys set PERFIL` guarda una clave en la bóveda, en `keys.json` dentro de la carpeta de configuración.
+   To run one task and print the result instead, use `run`:
 
-Un perfil con clave solo puede usar `https://`, salvo que apunte a `localhost`, `127.0.0.1` o `::1`.
+   ```sh
+   phycode run "Explain what src/Agent/AgentRunner.php does"
+   ```
 
-## Proveedores y modelos
+### CLI
 
-| `protocol` | Para qué | Notas |
-|---|---|---|
-| `openai` | llama-server, LM Studio, vLLM, OpenRouter, Groq y OpenAI con `/v1/chat/completions` | Por defecto. Si el servidor rechaza herramientas junto con `reasoning_effort`, la petición pasa a `/v1/responses`, y esa ruta se guarda en la caché de capacidades del perfil. |
-| `openai-responses` | API Responses de OpenAI | |
-| `anthropic` | API Messages de Anthropic | Admite caché de prompts. |
-| `ollama` | API nativa de Ollama (`/api/chat`) | Admite `keep_alive`. Solo está probado con fixtures, porque no había un modelo de chat instalado. |
+| Command | Description |
+| --- | --- |
+| `phycode run "TASK"` | Run one task and exit. `-p` is an alias. |
+| `phycode chat` | Start the line-based chat. |
+| `phycode -t` | Start the full-screen interface. It runs the same session as `chat`. |
+| `phycode rpc` | Serve the JSON-lines protocol on stdin and stdout. The full-screen interface uses it. |
+| `phycode acp` | Serve the Agent Client Protocol for editors such as Zed, JetBrains IDEs, and Neovim. |
+| `phycode serve` | Run a daemon that serves several clients over a Unix socket, or over a loopback port with a token. |
+| `phycode agents` | List the agents with their tools and restrictions. |
+| `phycode doctor` | Check the runtime, the model server of the profile, the sandbox, and the tools. |
+| `phycode keys` | Store (`set`), list, or remove (`rm`) API keys for a profile. |
+| `phycode shell` | Show (`status`), add (`install`), or remove (`uninstall`) the PATH block in your login shell. |
+| `phycode ssh` | Manage the SSH hosts the model may use: `list`, `add`, `remove`, `trust`, `test`. |
+| `phycode mcp` | Manage MCP servers: `list`, `login NAME`, `logout NAME`, `test NAME`. |
+| `phycode deploy` | Manage deployment targets: `list`, `add`, `remove`, `secret`, `plan`, `history`. |
+| `phycode version` | Print the version. |
 
-Los presets (`src/Config/ProviderPresets.php`) fijan la URL base y la variable de clave de siete proveedores: `openai`, `anthropic`, `openrouter`, `groq`, `lmstudio`, `vllm` y `ollama-cloud`.
+Common options:
 
-`fallback` indica perfiles de respaldo, en orden. Si el perfil principal falla, phycode prueba el siguiente.
+- `--cwd DIR`: the project folder. The default is the current folder.
+- `--profile NAME` and `--agent NAME`: the profile and the primary agent to use.
+- `--sandbox NAME`: `host`, `podman`, `docker`, or `bwrap`. It overrides the configuration and the agent files.
+- `--yolo`: do not ask before writes or commands.
+- `--add-dir DIR`: add a read-only folder outside the project. `read`, `list`, and `grep` can use it. Shell tools are not offered while it is set.
 
-`tool_mode` decide cómo se llaman las herramientas:
+Options for `run`:
 
-- `auto` (por defecto) sondea el servidor una vez y guarda el resultado. Los errores transitorios no se guardan, así que un servidor corregido funciona en la siguiente ejecución.
-- `native` usa los campos `tools` y `tool_calls` de la API.
-- `text` pide al modelo bloques `<tool_call>` y lee los resultados en bloques `<tool_response>`.
-- `none` desactiva las herramientas.
+- `--output-format text|json|stream-json`, or `--json` as a shortcut.
+- `--model NAME` and `--max-turns N`.
+- `--output-schema FILE|JSON`: require the final answer to match a JSON Schema.
+- `--image FILE`: attach an image. The option is repeatable, and the profile needs `vision: true`.
+- `-c` or `--continue`: continue the most recent session of the project.
+- `-r ID` or `--resume ID`: continue a specific session.
 
-El esfuerzo de razonamiento se cambia con `/effort`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` o `max`. Cada proveedor acepta un subconjunto, y phycode traduce el nivel a su formato (`src/Llm/EffortMapping.php`). `off` equivale a `none`, y `on` a `medium`.
+### Terminal UI
 
-`phycode doctor` comprueba un servidor llama.cpp local: sus propiedades, sus slots y sus modelos. Si el modelo ya está cargado, también prueba las llamadas a herramientas. Admite sockets Unix, TLS y clave de API.
+- `Enter` sends the message. `Alt+Enter` inserts a line break.
+- `Enter` during a turn queues the message. Queued messages run in order when the turn ends. `Alt+Up` moves them back into the input.
+- `Esc` interrupts the current turn. `Ctrl+C` also stops a running turn. When no turn runs, `Ctrl+C` clears the input, or exits if the input is empty. `Ctrl+D` exits when the input is empty.
+- `PgUp` and `PgDn` scroll the transcript.
+- When a tool asks for approval, `y` allows the call once, `a` allows the tool for the session, `n` denies the call, and `Esc` denies only that call.
+- Type `/` to list the commands, or `@` to list the subagents.
+- `/models` opens the model picker. `Enter` selects a model for the session. `Ctrl+S` also saves the model as the default of its profile. `Ctrl+F` toggles a favorite. `Esc` closes the picker.
 
-## Uso
+### Chat commands
 
-### Comandos de la CLI
+These commands work in `chat`, in the full-screen interface, and over RPC.
 
-| Comando | Qué hace |
-|---|---|
-| `phycode run "tarea"` | Ejecuta una tarea y termina. `-p` es un alias. |
-| `phycode chat` | Chat de línea en la terminal. |
-| `phycode -t` | Interfaz de pantalla completa. Es la misma sesión que `chat`. |
-| `phycode rpc` | Protocolo de JSON por líneas en stdin y stdout. Lo usa la interfaz de pantalla completa. |
-| `phycode acp` | Agente para editores que hablan Agent Client Protocol (Zed, JetBrains, Neovim). |
-| `phycode serve` | Demonio que atiende a varios clientes por un socket Unix, o por un puerto de loopback con token. |
-| `phycode agents` | Lista los agentes con sus herramientas y restricciones. |
-| `phycode doctor` | Comprueba el servidor, el perfil, el sandbox y las herramientas. |
-| `phycode keys` | Guarda, lista o borra claves de API de un perfil (`set`, `list`, `rm`). |
-| `phycode shell` | Muestra, instala o quita el bloque de PATH en tu shell de inicio (`status`, `install`, `uninstall`). |
-| `phycode ssh` | Hosts SSH donde el modelo puede ejecutar comandos (`list`, `add`, `remove`, `trust`, `test`). |
-| `phycode mcp` | Servidores MCP (`list`, `login`, `logout`, `test`). |
-| `phycode deploy` | Objetivos de despliegue (`list`, `add`, `remove`, `secret`, `plan`, `history`). |
-| `phycode version` | Muestra la versión. |
+| Command | Description |
+| --- | --- |
+| `/models` | List the models, and select the one for this session. |
+| `/effort [LEVEL]` | Show or set the reasoning effort for the next turn. Levels: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. |
+| `/context` | Show the tokens used against the window, the compaction threshold, and the tokens per category. |
+| `/context max <TOKENS>` | Set the window used for the compaction threshold. Use `off` to read the window from the model. Add `--save` to store the value in the configuration. |
+| `/compact [INSTRUCTIONS]` | Summarize older turns with the model. The newest turns that fit in the last quarter of the window are kept. |
+| `/usage` | Show the tokens spent in this session, by model, and their cost when pricing is configured. |
+| `/status` | Show the version, profile, model, sandbox, permissions, and transcript path. |
+| `/sessions` | List saved sessions. Use `/sessions switch <ID>` to change session, or `/sessions new` to start one. |
+| `/clear` | Start a new conversation. |
+| `/handoff` | Write a summary of the session for a new session. The summary is saved in `.phycode/handoffs`. |
+| `/diff` | Show the changes made by the last turn that changed files. |
+| `/undo` and `/redo` | Restore, or reapply, the files changed by the last turn. Each action asks for confirmation. |
+| `/rewind <TURN>` | Restore the files to their state before a turn, undoing that turn and every later one. |
+| `/agent <NAME>` and `/agents` | Switch the primary agent, or list the agents. |
+| `/plan [TASK]` | Switch to the `plan` agent. You approve the plan before it is built. |
+| `/todo [clear]` | Show or clear the task list of the session. |
+| `/image <PATH> [TEXT]` | Send an image with a question. The profile needs `vision: true`. Images up to 3.5 MB are accepted. |
+| `/skill [NAME]` and `/skills` | List or show skills. `/skills` lists the gentle-ai skills in read-only mode. |
+| `/mcp` | List the MCP servers and their tools. |
+| `/init` | Explore the project and write `AGENTS.md`, after you approve the change. |
+| `/review [BASE-REF]` | Review your changes with four reviewers, a refuter, and the project's test command. Nothing is edited. |
+| `/review mode on`, `/review mode off`, `/review mode status` | Enable, disable, or show the automatic review setting. |
+| `/deepresearch <QUESTION>` | Research a question on the web in up to five rounds, and answer with numbered sources. |
+| `/btw <QUESTION>` | Ask a side question. It runs in a separate process without tools, and it does not change the conversation. |
+| `/gentle [SUBCOMMAND]` | Show the gentle-ai status, or run its install, sync, upgrade, uninstall, refresh, or TUI command. Each one asks first. |
+| `/mcp preset [NAME]` | Add a gentle-ai MCP preset (`engram`, `context7`, or `codegraph`) to the global configuration. Asks first. |
+| `/persona [NAME]` | Set the persona of chat replies: `gentleman`, `neutral`, or `off`. The persona does not change the code. |
+| `/shell [ACTION]` | Show, add, or remove the PATH block in your login shell. Asks first when it changes a file. |
+| `/odd <FEATURE>` | Create `odd/tasks/FEATURE.md` from the ODD template. Asks first. |
+| `/reload` | Read the configuration again without restarting. |
+| `/help` and `/exit` | Show the commands, or leave. `/quit` also leaves. |
 
-Opciones comunes:
+Use `@NAME TASK` to run a subagent directly. Its report joins the conversation.
 
-- `--cwd DIR`, `--profile NOMBRE`, `--agent NOMBRE`.
-- `--sandbox NOMBRE`, con `host`, `podman`, `docker` o `bwrap`. Gana a la configuración y a los agentes.
-- `--yolo`, para no preguntar antes de escribir ni de ejecutar.
-- `--add-dir DIR`, una carpeta de solo lectura fuera del proyecto. `read`, `list` y `grep` pueden usarla. Mientras esté puesta, no se ofrecen las herramientas de shell (`bash`, `job`, `run_code`) ni las remotas (`ssh`, `ssh_copy`, `deploy`, `deploy_info`).
+### Scripting and output formats
 
-Opciones de `run`:
+- `run` prints the final answer to stdout. The change summary, the transcript path, and the session ID go to stderr.
+- `--output-format json` prints one JSON object with `status`, `text`, `turns`, `tool_calls`, `reason`, `changed`, `transcript`, `session_id`, `last_usage`, and `usage`.
+- `--output-format stream-json` prints one event per line.
+- With `--output-schema`, the final answer must be JSON that matches the schema. phycode asks again up to two times. If the answer still does not match, phycode exits with code 4.
+- Exit codes: `0` completed; `2` stopped, canceled, or failed; `3` turn budget exhausted; `4` the answer does not match the output schema.
 
-- `--output-format text`, `json` o `stream-json`, o `--json` como atajo.
-- `--model NOMBRE` y `--max-turns N`.
-- `--output-schema S`: un archivo o un JSON con un JSON Schema.
-- `--image ARCHIVO`, repetible. El perfil necesita `vision: true`.
-- `-c` o `--continue` retoma la sesión más reciente del proyecto. `-r ID` o `--resume ID` retoma una sesión concreta.
+## Configuration
 
-### Pantalla completa
+phycode reads two configuration files and a small set of environment variables.
 
-- Enter envía. Alt+Enter añade una línea.
-- Si el agente está trabajando, Enter pone el mensaje en cola. Alt+Up devuelve la cola al editor.
-- Esc interrumpe el turno, y Ctrl+C también lo detiene. Sin turno en marcha, Ctrl+C limpia el editor, o sale si ya está vacío. Ctrl+D sale con el editor vacío.
-- PgUp y PgDn desplazan la transcripción.
-- Cuando una herramienta pide aprobación: `y` permite una vez, `a` permite esa herramienta durante la sesión, `n` la niega, y Esc niega solo esa llamada.
-- Escribe `/` para ver los comandos, y `@` para ver los subagentes.
-- `/models` abre el selector de modelos. Enter lo usa en la sesión. Ctrl+S lo guarda además como predeterminado de su perfil, y Ctrl+F lo marca como favorito.
+### Files and environment
 
-### Comandos de chat
+| Source | Scope | Notes |
+| --- | --- | --- |
+| `~/.config/phycode/config.json` | Global | Or `$XDG_CONFIG_HOME/phycode/config.json`. It can set every option. |
+| `<project>/.phycode/config.json` | Project | It can set only `limits`, `default_agent`, and `subagents`. It cannot choose servers, keys, permissions, or sandboxes. |
 
-| Comando | Qué hace |
-|---|---|
-| `/models` | Lista los modelos y cambia el de esta sesión. |
-| `/effort [NIVEL]` | Muestra o cambia el esfuerzo de razonamiento del siguiente turno. |
-| `/context` | Muestra el contexto usado, el umbral de compactación y los tokens por categoría. |
-| `/context max` | Fija la ventana de referencia del umbral: un número, un número con `k`, o `off`. Con `--save`, lo guarda en la configuración. |
-| `/compact [INSTRUCCIONES]` | Resume los turnos antiguos con el modelo y conserva el último cuarto de la ventana. |
-| `/usage` | Tokens gastados en la sesión, por modelo, y su coste si la configuración tiene precios. |
-| `/status` | Versión, perfil, modelo, sandbox, permisos y transcripción. |
-| `/sessions` | Lista las sesiones guardadas. `/sessions switch ID` cambia a una, y `/sessions new` empieza otra. |
-| `/clear` | Empieza una conversación nueva. |
-| `/handoff` | Escribe un resumen de la sesión para continuarla en otra. Se guarda en `.phycode/handoffs`. |
-| `/diff` | Muestra los cambios del último turno que tocó archivos. |
-| `/undo`, `/redo` | Devuelven o vuelven a aplicar los archivos del último turno. Pide confirmación. |
-| `/rewind TURNO` | Devuelve los archivos a como estaban antes de un turno, junto con los posteriores. |
-| `/agent NOMBRE`, `/agents` | Cambia el agente principal, o lista los agentes. |
-| `/plan [TAREA]` | Cambia al agente `plan`. Apruebas el plan antes de que se construya. |
-| `/todo [clear]` | Muestra o borra la lista de tareas de la sesión. |
-| `/image RUTA [TEXTO]` | Envía una imagen con una pregunta. El perfil necesita `vision: true`. |
-| `/skill [NOMBRE]`, `/skills` | Lista o muestra skills. `/skills` lista las de gentle-ai, en solo lectura. |
-| `/mcp` | Lista los servidores MCP y sus herramientas. |
-| `/init` | Explora el proyecto y escribe `AGENTS.md`, con tu aprobación. |
-| `/review [base-ref]` | Revisa tus cambios con cuatro revisores, un refutador y el comando de tests. No edita nada. |
-| `/review mode` | Activa (`on`), desactiva (`off`) o muestra (`status`) las revisiones. |
-| `/deepresearch PREGUNTA` | Investiga en la web en hasta cinco rondas y responde con fuentes numeradas. |
-| `/btw PREGUNTA` | Responde una pregunta lateral sin herramientas, en otro proceso. No altera la conversación. |
-| `/gentle` | Muestra el estado de gentle-ai, o ejecuta sus comandos de instalación, sincronización y actualización. Cada uno pide aprobación. |
-| `/mcp preset` | Añade a la configuración global un servidor MCP de gentle-ai: `engram`, `context7` o `codegraph`. |
-| `/persona` | Cambia la persona de las respuestas del chat: `gentleman`, `neutral` u `off`. No afecta al código. |
-| `/shell` | Muestra, instala o quita el bloque de PATH en tu shell. |
-| `/odd FEATURE` | Crea `odd/tasks/FEATURE.md` a partir de la plantilla ODD. |
-| `/reload` | Vuelve a leer la configuración sin reiniciar. |
-| `/help`, `/exit` | Muestra los comandos o sale. `/quit` también sale. |
+Environment variables:
 
-Además, `@NOMBRE TAREA` lanza un subagente directo y añade su informe a la conversación.
+- `PHYCODE_BASE_URL` and `PHYCODE_MODEL` replace the matching fields of the default profile.
+- `PHYCODE_PROFILE` selects the default profile.
+- `PHYCODE_API_KEY` supplies the key of the `env` profile.
 
-### Salida para scripts
+When the configuration defines no profiles, `PHYCODE_BASE_URL` and `PHYCODE_MODEL` create a profile named `env`.
 
-- `run` imprime el texto final en stdout. El resumen de cambios, la transcripción y la sesión van a stderr.
-- `--output-format json` imprime un solo objeto con `status`, `text`, `turns`, `tool_calls`, `reason`, `changed`, `transcript`, `session_id`, `last_usage` y `usage`.
-- `--output-format stream-json` imprime un evento por línea.
-- Con `--output-schema`, la respuesta final debe ser un JSON que cumpla el esquema. Si no lo cumple, phycode lo vuelve a pedir hasta dos veces. Si sigue sin cumplirlo, sale con código 4.
-- Códigos de salida: `0` completado; `2` detenido, cancelado o con error; `3` presupuesto de turnos agotado; `4` respuesta fuera de esquema.
+### Top-level sections
 
-## Permisos
+| Section | Purpose |
+| --- | --- |
+| `profiles`, `default_profile` | Model servers and their options |
+| `permissions` | Permission mode, in `mode` |
+| `rules` | `allow`, `ask`, and `deny` rules per tool |
+| `sandbox` | Where `bash` and `run_code` run, with the image and network settings |
+| `limits` | Turn budgets, timeouts, and size limits |
+| `hooks`, `checks` | Commands that run on agent events and after edits |
+| `custom_tools` | Custom tools defined by a command |
+| `tools` | `disabled`: the tools that are not offered |
+| `mcp_servers`, `mcp` | MCP servers and tool search |
+| `web` | Web search and page fetching |
+| `skills` | `enabled`, `index`, and `autonomy` for skills |
+| `context`, `effort` | Window size, automatic compaction, and the default reasoning effort |
+| `ui` | Theme, editor, diff view, and subagent display |
+| `pricing` | Prices per model, used by `/usage` |
+| `oracle` | A stronger model that the agent can consult |
+| `ssh`, `deploy` | SSH hosts and deployment targets |
+| `gentle_ai` | Path to the gentle-ai binary, and the persona |
 
-El modo se fija con `permissions.mode` en la configuración global, o con `--yolo`.
+### Profile keys
 
-| Modo | Qué pasa |
-|---|---|
-| `ask` (por defecto) | Pide antes de escribir archivos, ejecutar comandos y hacer operaciones de git que escriben o hablan con un remoto. |
-| `accept_edits` | Escribe archivos sin preguntar. Los comandos siguen preguntando. |
-| `plan` | Solo permite herramientas de lectura. |
-| `dont_ask` | No pregunta. Lo que necesitaría aprobación se rechaza. |
-| `yolo` | No pregunta, salvo en las acciones que lo fuerzan (ver abajo). |
+| Key | Description |
+| --- | --- |
+| `base_url` | Required. Use `http://` only for `localhost`, `127.0.0.1`, or `::1`. A profile with a key must use `https://`. A Unix socket is written as `unix:///absolute/path.sock`. |
+| `model` | Required. The model name on the server. |
+| `protocol` | `openai` (default), `openai-responses`, `anthropic`, or `ollama`. See [Protocols](#protocols). |
+| `tool_mode` | `auto` (default), `native`, `text`, or `none`. See [Tool modes](#tool-modes). |
+| `thinking` | Initial reasoning effort: `none` (default), `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `off`, or `on`. |
+| `context_limit` | Context window in tokens. Ollama receives it as `num_ctx`. |
+| `max_output_tokens` | Maximum output tokens, from 16 to 100000. The default is 2048. |
+| `token_param` | `max_tokens` or `max_completion_tokens`. For `api.openai.com`, the default is `max_completion_tokens`. |
+| `api_key_env`, `api_key_file`, `api_key_store`, `api_key_files` | Where the key comes from. Keys are never stored inline. |
+| `fallback` | An ordered list of fallback profiles. |
+| `vision` | Set to `true` when the model accepts images. Required for `--image` and `/image`. |
+| `keep_alive` | Ollama only. The default is `5m`. |
+| `extra_body` | Extra fields added to each request. They are merged last, so they can override other fields. |
+| `effort_format`, `effort_levels` | How the reasoning effort is sent to the provider. `effort_format` accepts `auto`, `openai`, `openrouter`, `deepseek`, `chat_template`, or `none`. |
+| `prompt_cache`, `prompt_cache_ttl`, `prompt_cache_retention` | Prompt caching. TTL is `5m` or `1h`. Retention is `in_memory` or `24h`. |
+| `compact_mode` | `auto` (default), `shared`, or `standalone`. |
+| `llama` | Settings for a local `llama-server`: `bin`, `model`, `args`, and `env`. |
 
-- Estas acciones piden aprobación en todos los modos, incluido `yolo`: leer, buscar, escribir, editar, mover o borrar archivos con nombre de secreto, como `.env`, `.envrc`, `terraform.tfvars`, `.kube/config`, `.docker/config.json` o el `keys.json` de la bóveda. Algunos casos de `ssh`, `ssh_copy`, `deploy` y `web_fetch` también piden aprobación en todos los modos.
-- Sin terminal, por ejemplo con `run` en un script o con `chat` alimentado por una tubería, las escrituras y los comandos quedan desactivados. `--yolo` los vuelve a permitir.
-- Las herramientas no escriben en `.git`, `.phycode` ni `.claude`, a ninguna profundidad. Mover o borrar una carpeta que contenga una de ellas también se rechaza.
-- Los enlaces simbólicos se siguen para comprobar que su destino está dentro del proyecto. Si sale del proyecto, se rechaza.
-- `rules` tiene las listas `allow`, `ask` y `deny`, con entradas `herramienta:patrón` o `*`. Por ejemplo, `"bash:git status *"` o `"bash:npm test"`. Un comando encadenado solo se permite si todos sus segmentos lo están, y nunca se permite `git -c`.
-- El orden de decisión es: reglas `deny`, línea dura, restricciones del agente, modo de permisos, reglas `ask` y `allow`, y por último tu respuesta.
+### API keys
 
-La línea dura es una lista de comandos que nunca se ejecutan, en ningún modo y con ninguna aprobación. Cubre el borrado recursivo de rutas del sistema y las variantes que el shell expande de otra forma, como `rm -rf /`, `find / -delete` o `wipefs` sobre un disco. Dentro de Podman o Docker, `bash` no pasa por la línea dura, porque el contenedor es el límite. La línea dura tampoco lee el código de `run_code`.
+- Use `api_key_env` (the name of an environment variable), `api_key_file` (a file path), or `api_key_store: true` (the phycode vault).
+- `phycode keys set <PROFILE>` stores a key in the vault, in `keys.json` inside the configuration folder. It reads the key from hidden input or from stdin.
+- A profile that has a key must use `https://`, unless the URL points to `localhost`, `127.0.0.1`, or `::1`.
 
-Las claves configuradas se ocultan en toda la salida, incluida la de las herramientas y las sesiones guardadas. Además, los mensajes de error, los avisos, la lista de modelos y `doctor` ocultan URLs con usuario y contraseña, cabeceras `Authorization` y claves con formato `sk-`. Las secuencias de escape de terminal se eliminan antes de mostrar nada.
+## Models and providers
 
-## Sandbox
+### Protocols
 
-- `sandbox.default` elige dónde corren `bash` y `run_code`: `host` (por defecto), `bwrap`, `podman` o `docker`. `--sandbox` lo sustituye en esa ejecución.
-- Un agente puede pedir otro sandbox en su archivo, pero no puede pasar a `host` si la configuración usa uno.
-- Podman y Docker necesitan `sandbox.image`, por ejemplo `docker.io/library/debian:trixie-slim`.
-- `sandbox.network` es `none` por defecto, o `bridge`.
-- `sandbox.allow_domains` lista los hosts permitidos, como `github.com` o `*.npmjs.org`. Solo funciona con `bwrap` y con red `none`, y necesita `socat`.
+| `protocol` | Use it for | Notes |
+| --- | --- | --- |
+| `openai` (default) | llama-server, LM Studio, vLLM, OpenRouter, Groq, and OpenAI through `/v1/chat/completions` | If the server rejects tools combined with `reasoning_effort`, phycode resends the request to `/v1/responses` and stores that route in the capability cache of the profile. |
+| `openai-responses` | The OpenAI Responses API | |
+| `anthropic` | The Anthropic Messages API | Supports prompt caching. |
+| `ollama` | The native Ollama API (`/api/chat`) | Supports `keep_alive`. Tested only with recorded fixtures, because no chat model was installed for a live test. |
 
-Con bubblewrap, el sistema de archivos se monta en solo lectura y el proyecto en escritura. Las rutas con credenciales habituales (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.config/gh` y `~/.config/phycode`, entre otras) se ocultan con un tmpfs o con un archivo vacío.
+The provider presets in `src/Config/ProviderPresets.php` supply the base URL and the key variable of seven providers: `openai`, `anthropic`, `openrouter`, `groq`, `lmstudio`, `vllm`, and `ollama-cloud`.
 
-Con Podman o Docker, el proyecto se monta en `/workspace`, y `.git`, `.phycode` y `.claude` se montan en solo lectura. Se quitan todas las capacidades, se activa `no-new-privileges`, hay un límite de 2 GB de memoria y 512 procesos, y `/tmp` es un tmpfs de 512 MB. La imagen nunca se descarga sola (`--pull=never`).
+A profile can list fallback profiles in `fallback`. If the primary profile fails, phycode tries the next profile in the list.
 
-Las herramientas git no pasan por el sandbox. Se ejecutan en el host, así que las credenciales y el socket del agente SSH no entran en el contenedor.
+### Tool modes
 
-El sandbox protege la máquina fuera del proyecto. No protege el proyecto: un comando puede cambiar cualquier archivo de él, y lo que se ejecute después en el host, como un build o los tests, ejecuta ese código.
+- `auto` (default) probes the server once and caches the result. Transient errors are not cached, so a server that recovers works on the next run.
+- `native` sends the tools in the API request and reads structured tool calls.
+- `text` asks the model to write `<tool_call>` blocks, and returns results in `<tool_response>` blocks.
+- `none` disables tools.
 
-## Herramientas
+### Reasoning effort
 
-Las herramientas se ofrecen según el agente, según `tools.disabled` y según las funciones activas. Las de `web` solo aparecen si hay sección `web`. `skill` y `skill_manage` solo aparecen si las skills están activas. `ssh` y `deploy` solo aparecen si hay hosts u objetivos definidos.
+Use `/effort` to change the reasoning effort: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Each provider accepts a subset of these levels, and phycode maps the chosen level to the provider's format (see `src/Llm/EffortMapping.php`). `off` is equivalent to `none`, and `on` is equivalent to `medium`.
 
-| Herramienta | Categoría | Qué hace | Aprobación en `ask` |
-|---|---|---|---|
-| `read` | lectura | Lee un archivo. Por defecto devuelve hasta 200 líneas (`limits.read_max_lines`). | No, salvo archivos secretos |
-| `list` | lectura | Lista los archivos del proyecto. En un repositorio usa `git ls-files`. | No |
-| `grep` | lectura | Busca texto. Usa `rg` si está instalado. | No, salvo rutas secretas |
-| `repo_map` | lectura | Mapa de clases y funciones con su línea. Lenguajes: PHP, JavaScript y TypeScript, Python, Go, Rust, Java, Kotlin, Scala, C#, Ruby, C y C++. | No |
-| `write` | escritura | Crea o reemplaza un archivo. Si es PHP o Python y no compila, el cambio se revierte. | Sí |
-| `edit` | escritura | Reemplaza un texto dentro de un archivo, con la misma comprobación de sintaxis. | Sí |
-| `move`, `delete` | escritura | Mueve o borra. Lo borrado va a `.phycode/trash`. | Sí |
-| `bash` | ejecución | Ejecuta un comando de shell en el sandbox elegido. Con `background: true`, corre en segundo plano. | Sí |
-| `job` | lectura | Lee la salida de un comando en segundo plano, o lo detiene. | No |
-| `run_code` | ejecución | Ejecuta un programa corto de Python o JavaScript en la raíz del proyecto. La aprobación muestra el programa completo. | Sí |
-| `git_read` | lectura | `status`, `diff`, `log`, `show`, `blame`, y listados de ramas, etiquetas y remotos. | No |
-| `git_write` | escritura | `add`, `commit -m`, crear y borrar ramas, `switch`, etiquetas, `stash`, `merge`, `reset` en modo `soft` o `mixed`, y `restore --staged`. | Sí |
-| `git_remote` | ejecución | `fetch`, `pull --ff-only` y `push`. Nunca fuerza ni borra ramas remotas. | Sí |
-| `gh_read`, `gh_write` | lectura y ejecución | Lectura y escritura en GitHub con `gh`. | No, y sí |
-| `task` | delegación | Lanza un subagente. Solo si los subagentes están activados. | No |
-| `todo` | lectura | Lista de tareas de la sesión. | No |
-| `web_search` | lectura | Busca en la web con el backend activo. | No |
-| `web_fetch` | lectura | Descarga una página y la devuelve como texto. | Sí, si la URL trae consulta (`?...`), usuario, o una ruta de más de 300 caracteres |
-| `skill`, `skill_manage` | lectura y escritura | Carga una skill, o crea y modifica skills del usuario. | `skill_manage` pide, salvo con `skills.autonomy: "auto"` |
-| `ask_user` | lectura | Hace una pregunta al usuario. Solo en modo interactivo. | No aplica |
-| `oracle` | ejecución | Consulta un modelo más potente, definido en `oracle`. | Sí, salvo con `oracle.approval: "allow"` |
-| `ssh`, `ssh_copy` | ejecución | Comandos y copias en los hosts de `ssh.hosts`. | Sí |
-| `deploy`, `deploy_info` | ejecución y lectura | Despliegues a los objetivos de `deploy.targets`. `deploy_info` consulta información de esos objetivos. | `deploy` sí |
-| Herramientas propias (`custom_tools`) | ejecución | Ejecutan un comando que defines en la configuración. | Sí |
+### llama.cpp
 
-Con `accept_edits`, las herramientas de escritura no piden. Con `yolo`, solo piden las acciones forzadas. Con `plan`, solo se permiten las de lectura. Un agente de solo lectura (`permission: readonly`) no recibe herramientas de escritura ni de ejecución, en ningún modo.
+`phycode doctor` inspects a local llama.cpp server: its properties, its slots, and its models. When the model is loaded, `doctor` also probes tool calling. Unix sockets, TLS, and API keys are supported.
 
-## Agentes y subagentes
+## Permissions
 
-Un agente es un archivo Markdown con frontmatter YAML. El cuerpo del archivo es su prompt de sistema.
+The permission mode comes from `permissions.mode` in the global configuration, or from `--yolo`.
 
-| Agente | Modo | Herramientas | Notas |
-|---|---|---|---|
-| `build` | principal | Todas | Agente por defecto. Responde sin herramientas cuando la petición no requiere trabajar en el proyecto. |
-| `plan` | principal | `read`, `list`, `grep`, `task` | Solo lectura. Escribe un plan con pasos que otro agente puede ejecutar sin haber visto la investigación. |
-| `explore` | subagente | `read`, `list`, `grep` | Solo lectura. Como máximo 8 turnos. Pide un informe de hasta 200 palabras. |
-| `general` | subagente | `read`, `list`, `grep`, `write`, `edit`, `move`, `delete`, `bash`, `run_code` | Como máximo 12 turnos. No puede delegar. |
+| Mode | Behavior |
+| --- | --- |
+| `ask` (default) | Asks before file writes, commands, and git operations that write or contact a remote. |
+| `accept_edits` | Writes files without asking. Commands still ask. |
+| `plan` | Allows read-only tools only. |
+| `dont_ask` | Does not ask. A call that would need approval is refused. |
+| `yolo` | Does not ask, except for the actions listed below. |
 
-Los revisores de `/review` son `reviewer-readability`, `reviewer-reliability`, `reviewer-resilience`, `reviewer-risk` y `reviewer-refuter`.
+- Some actions always ask, including in `yolo`. These are reads, searches, writes, edits, moves, and deletes of files with secret-like names, such as `.env`, `.envrc`, `terraform.tfvars`, `.kube/config`, and the vault file `keys.json`. Some `ssh`, `ssh_copy`, `deploy`, and `web_fetch` calls also always ask.
+- Without a terminal, for example when `run` executes in a script, writes and commands are disabled. Pass `--yolo` to allow them.
+- Tools never write to `.git`, `.phycode`, or `.claude`, at any depth. Moving or deleting a folder that contains one of them is refused too.
+- Symbolic links are resolved before the check. A link that points outside the project is refused.
+- The `rules` section takes `allow`, `ask`, and `deny` lists. Each entry has the form `tool:pattern`, or `*` for every call. For example, `"bash:git status *"` allows `git status`. A chained shell command is allowed only when every segment is allowed. An allow rule never covers `git -c`.
+- phycode evaluates a call in this order: `deny` rules, the hard line, agent restrictions, the permission mode, the `ask` and `allow` rules, and finally your answer.
 
-Los agentes propios se buscan en este orden:
+The hard line refuses a fixed set of destructive commands in every mode and with any approval. It covers recursive deletes of system paths, and shell expansions that hide the same operation, such as `rm -rf /`, `find / -delete`, and `wipefs` on a disk. Inside a Podman or Docker sandbox, `bash` is exempt, because the container is the boundary. The hard line does not inspect the code that `run_code` runs.
 
-1. `.phycode/agents` y `.claude/agents` del proyecto, desde la carpeta de trabajo hasta la raíz.
+phycode redacts configured API keys everywhere, including tool output and saved sessions. Error messages, notices, the model list, and `doctor` also hide URLs with embedded credentials, `Authorization` headers, and keys with the `sk-` prefix. Terminal control sequences are removed before any text is displayed.
+
+## Sandboxing
+
+`sandbox.default` selects where `bash` and `run_code` run: `host` (default), `bwrap`, `podman`, or `docker`. The `--sandbox` option overrides this setting for one run.
+
+- An agent file can request a different sandbox. A request for `host` falls back to the configured sandbox.
+- Podman and Docker require `sandbox.image`, for example `docker.io/library/debian:trixie-slim`.
+- `sandbox.network` is `none` by default. Set it to `bridge` to allow network access.
+- `sandbox.allow_domains` lists the hosts that a sandbox may reach, for example `github.com` or `*.npmjs.org`. It works only with `bwrap` and network `none`, and it requires `socat`.
+
+### bubblewrap
+
+With bubblewrap, the root filesystem is mounted read-only and the project folder is writable. Common credential paths are hidden, with an empty tmpfs or an empty file: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.config/gh`, `~/.config/phycode`, and others.
+
+### Podman and Docker
+
+The project is mounted at `/workspace`. The folders `.git`, `.phycode`, and `.claude` are mounted read-only. The container drops all Linux capabilities, sets `no-new-privileges`, limits memory to 2 GB and processes to 512, and mounts `/tmp` as a 512 MB tmpfs. The image is never pulled implicitly (`--pull=never`). Network access is `none` unless `sandbox.network` is `bridge`.
+
+### Git
+
+Git tools do not use the sandbox. They run on the host, so credentials and SSH agent sockets never enter a container. Git commands pass an allow list. Commands such as `checkout`, which can discard uncommitted changes, and `rebase` are refused. `push` never forces an update and never deletes a remote branch.
+
+A sandbox protects the machine outside the project. It does not protect the project itself. A command can change any file in the project, and anything you run later on the host, such as a build or a test suite, executes that code.
+
+## Tools
+
+phycode offers tools according to the agent, the `tools.disabled` setting, and the features that are configured. For example, `web_search` and `web_fetch` appear only when the `web` section exists, and `ssh` and `deploy` appear only when hosts or targets are defined.
+
+| Tool | Category | Purpose | Approval in `ask` mode |
+| --- | --- | --- | --- |
+| `read` | read | Read a file, or a range of lines. By default it returns up to 200 lines (`limits.read_max_lines`). | No, except for secret-like files |
+| `list` | read | List project files. Inside a Git repository, it uses `git ls-files`. | No |
+| `grep` | read | Search file contents. It uses `rg` when `rg` is installed. | No, except for secret-like paths |
+| `repo_map` | read | Map classes and functions with their line numbers. Supported languages: PHP, JavaScript and TypeScript, Python, Go, Rust, Java, Kotlin, Scala, C#, Ruby, C, and C++. | No |
+| `write` | write | Create or replace a file. A PHP or Python file that fails the syntax check is rolled back. | Yes |
+| `edit` | write | Replace text in a file, with the same syntax check. | Yes |
+| `move`, `delete` | write | Move or delete a file. Deleted files go to `.phycode/trash`. | Yes |
+| `bash` | exec | Run a shell command in the selected sandbox. With `background: true`, the command runs in the background. | Yes |
+| `job` | read | Read the output of a background command, or stop it. | No |
+| `run_code` | exec | Run a short Python or JavaScript program from the project root. The approval prompt shows the whole program. | Yes |
+| `git_read` | read | `status`, `diff`, `log`, `show`, `blame`, and listings of branches, tags, and remotes. | No |
+| `git_write` | write | `add`, `commit -m`, create and delete branches, `switch`, tags, `stash`, `merge`, `reset` in `soft` or `mixed` mode, and `restore --staged`. | Yes |
+| `git_remote` | exec | `fetch`, `pull --ff-only`, and `push`. Never forces a push or deletes a remote branch. | Yes |
+| `gh_read`, `gh_write` | read, exec | Read from GitHub, and write to GitHub, through the `gh` command. | No, and yes |
+| `task` | delegate | Start a subagent. Offered only when subagents are enabled. | No |
+| `todo` | read | Show or update the task list of the session. | No |
+| `web_search` | read | Search the web with the active backend. | No |
+| `web_fetch` | read | Fetch a page and return its text. | Yes, when the URL has a query string, user information, or a path longer than 300 characters |
+| `skill`, `skill_manage` | read, write | Load a skill, or create and change user skills. | `skill_manage` asks unless `skills.autonomy` is `auto` |
+| `ask_user` | read | Ask you a question. Available in interactive sessions only. | Not applicable |
+| `oracle` | exec | Ask a stronger model configured in `oracle`. | Yes, unless `oracle.approval` is `allow` |
+| `ssh`, `ssh_copy` | exec | Run commands, and copy files, on the hosts in `ssh.hosts`. | Yes |
+| `deploy`, `deploy_info` | exec, read | Deploy to the targets in `deploy.targets`. `deploy_info` returns information about them. | `deploy` asks |
+| Custom tools | exec | Commands defined in `custom_tools`. | Yes |
+
+The approval column describes the default `ask` mode. In `accept_edits`, write tools run without asking. In `yolo`, only the actions listed under [Permissions](#permissions) ask. In `plan`, only read tools are allowed. A read-only agent (`permission: readonly`) never receives write or exec tools.
+
+## Agents and subagents
+
+An agent is a Markdown file with YAML frontmatter. The body of the file is the agent's system prompt.
+
+| Agent | Mode | Tools | Notes |
+| --- | --- | --- | --- |
+| `build` | primary | All | The default agent. It answers without tools when the request does not need project work. |
+| `plan` | primary | `read`, `list`, `grep`, `task` | Read-only. It writes a plan whose steps another agent can carry out without seeing the investigation. |
+| `explore` | subagent | `read`, `list`, `grep` | Read-only. At most 8 turns. Its report should not exceed 200 words. |
+| `general` | subagent | `read`, `list`, `grep`, `write`, `edit`, `move`, `delete`, `bash`, `run_code` | At most 12 turns. It cannot delegate. |
+
+The reviewer agents used by `/review` are `reviewer-readability`, `reviewer-reliability`, `reviewer-resilience`, `reviewer-risk`, and `reviewer-refuter`.
+
+phycode looks for custom agents in this order of priority:
+
+1. `.phycode/agents` and `.claude/agents` in the project, from the working folder up to the root.
 2. `~/.config/phycode/agents`.
 3. `~/.claude/agents`.
-4. Los integrados.
+4. The built-in agents.
 
-Campos del frontmatter:
+The frontmatter supports these fields:
 
-- `name` y `description`, obligatorios.
-- `mode`: `primary`, `subagent` o `all`. Por defecto, `subagent`.
-- `tools` y `disallowedTools`: listas de herramientas. Los nombres de Claude Code (`Read`, `Grep`, `Glob`, `Bash`) se traducen.
-- `permission: readonly` o `permissionMode: plan`: limitan el agente a la lectura.
-- `model` o `profile`: solo en la configuración global. En un archivo del proyecto se ignoran con un aviso.
-- `max_turns` (también `maxTurns` o `steps`), de 1 a 100.
-- `temperature`, de 0 a 2.
-- `sandbox`: un agente puede elegir otro sandbox, pero no puede pasar a `host` si la configuración usa uno.
-- `disable: true`: oculta el agente.
+- `name` and `description` are required.
+- `mode`: `primary`, `subagent`, or `all`. The default is `subagent`.
+- `tools` and `disallowedTools`: lists of tool names.
+- `permission: readonly` or `permissionMode: plan`: restricts the agent to read-only tools.
+- `model` or `profile`: honored only in the global configuration. In a project file, phycode ignores them and prints a warning.
+- `max_turns` (also `maxTurns` or `steps`): from 1 to 100.
+- `temperature`: from 0 to 2.
+- `sandbox`: a sandbox request, subject to the rule described in [Sandboxing](#sandboxing).
+- `disable: true`: hides the agent.
 
-Reglas de delegación:
+Delegation follows these rules:
 
-- Un subagente empieza con una conversación nueva: su prompt y la tarea. Solo vuelve su informe final.
-- Solo hay un nivel: un subagente no puede lanzar otro.
-- Un subagente nunca tiene más herramientas que su padre, ni menos restricciones. Los modos de permisos se heredan, y el sandbox no se puede debilitar.
-- Cada subagente tiene su presupuesto de turnos y un tiempo máximo de `limits.subagent_timeout` (300 segundos por defecto). Si se agota el presupuesto, se le pide un informe final sin herramientas.
-- Una respuesta puede lanzar hasta 3 tareas (`max_tasks_per_turn`), y una ejecución, hasta 10 (`max_tasks_per_run`).
-- Las llamadas a herramientas de una misma respuesta se ejecutan en orden, una después de otra.
+- A subagent starts with a new conversation that contains its system prompt and the task. Only its final report returns to the parent.
+- Delegation has one level. A subagent cannot start another subagent.
+- A subagent never has more tools than its parent, and it never has fewer restrictions. The permission mode carries over, and the sandbox cannot be weakened.
+- Each subagent has a turn budget (`max_turns`) and a time limit (`limits.subagent_timeout`, 300 seconds by default). When the budget runs out, phycode asks for a final report without tools.
+- One reply can start at most 3 tasks (`limits.max_tasks_per_turn`). One run can start at most 10 (`limits.max_tasks_per_run`).
+- The tool calls in a reply run in order, one after another.
 
 ## Skills
 
-- Una skill es una carpeta con un `SKILL.md`. Su frontmatter tiene `name` y `description`.
-- phycode busca skills en `.agents/skills` y `.claude/skills` del proyecto, en `~/.agents/skills` y `~/.claude/skills`, y en `~/.config/phycode/skills`, donde el agente guarda las suyas.
-- Si `skills.index` está en `on` (por defecto), el índice de skills entra en el prompt. El texto completo de una skill se carga solo cuando hace falta, con la herramienta `skill`.
-- `skill_manage` crea, parchea o escribe archivos de skills del usuario. Antes de guardar, escanea el contenido (`SkillScanner`). Pide aprobación, salvo que pongas `skills.autonomy` en `"auto"`.
+- A skill is a folder that contains a `SKILL.md` file. The frontmatter of that file includes a `name` and a `description`.
+- phycode searches `.agents/skills` and `.claude/skills` in the project, `~/.agents/skills` and `~/.claude/skills`, and `~/.config/phycode/skills`. The agent saves its own skills in the last folder.
+- With `skills.index` set to `on` (the default), the index of available skills is part of the prompt. The full text of a skill loads only when it is needed, through the `skill` tool.
+- `skill_manage` creates skills, patches them, and writes their files. Before it saves content, it scans the content for unsafe patterns. It asks for approval unless `skills.autonomy` is `auto`.
+- `/skill` lists or shows a skill. `/skills` lists the gentle-ai skills in read-only mode.
 
-## MCP
+## MCP servers
 
-- Los servidores se definen en `mcp_servers`. Un servidor es un `command` (por stdio: el programa y sus argumentos), o una `url` (HTTP, con `headers`, `token_env` u `oauth`).
-- `enabled: false` apaga un servidor sin borrarlo. `approval` vale `ask` (por defecto) o `allow`. Con `allow`, phycode confía en las herramientas de ese servidor.
-- Las cabeceras con nombres como `Authorization`, `api-key` o `token` se rechazan en `config.json`. Para credenciales, usa `token_env` u `oauth`.
-- Las herramientas aparecen como `mcp__SERVIDOR__HERRAMIENTA`.
-- `mcp.tool_search` controla la búsqueda de herramientas. `auto` (por defecto) la activa cuando hay más de 20 herramientas o más de 30 000 bytes de esquemas. También acepta `on` y `off`.
-- Los recursos y los prompts del servidor se exponen si el servidor los ofrece.
-- Comandos: `phycode mcp list`, `login NOMBRE`, `logout NOMBRE` y `test NOMBRE`.
+- Define servers under `mcp_servers`. A server has either a `command`, which is a list of the program and its arguments for stdio, or a `url` for HTTP, with optional `headers`, `token_env`, or `oauth`.
+- `enabled: false` disables a server without deleting it. `approval` is `ask` (the default) or `allow`. With `allow`, phycode trusts the tools of that server.
+- Headers whose names contain `api-key`, `apikey`, `token`, `secret`, `password`, or `authorization` are refused in `config.json`. Use `token_env` or `oauth` for credentials.
+- Tools are named `mcp__SERVER__TOOL`.
+- `mcp.tool_search` controls deferred tool search. `auto` (the default) enables it above 20 tools or 30,000 bytes of tool schemas. `on` and `off` force the behavior.
+- MCP resources and prompts are exposed when the server offers them.
+- Use `/mcp` in chat to list the servers and their tools.
 
-## Web
+## Web access
 
-- `web_search` usa el backend activo de `web.search`: `searxng`, `brave`, `tavily`, `exa`, `perplexity`, `ollama` o `firecrawl`. Cada backend se define como proveedor con nombre en `web.search.providers`, y `web.search.active` elige cuál usar. La clave va al almacén (`api_key_store`) o a un archivo (`api_key_file`).
-- `web_fetch` descarga una página y la devuelve como texto. Por defecto, el límite es de 1 MiB, el tiempo de espera de 20 segundos y la caché de 15 minutos (`web.fetch.max_bytes`, `web.fetch.timeout_seconds` y `web.cache_minutes`).
-- `web.allow_hosts` lista los hosts permitidos, por nombre o con `*.dominio`.
-- Antes de conectar, la guardia SSRF valida el destino y fija las direcciones comprobadas. El contenido de la web entra al contexto marcado como no confiable.
+- `web_search` uses the active backend in `web.search`: `searxng`, `brave`, `tavily`, `exa`, `perplexity`, `ollama`, or `firecrawl`. Define each backend as a named provider in `web.search.providers`, and select one with `web.search.active`. Keys go to the vault (`api_key_store: true`) or to a file (`api_key_file`).
+- `web_fetch` retrieves a page and returns its text. The defaults are a 1 MiB size limit (`web.fetch.max_bytes`), a 20-second timeout (`web.fetch.timeout_seconds`), and a 15-minute cache (`web.cache_minutes`).
+- `web.allow_hosts` lists the hosts that are allowed for web access, by name or with a `*.domain` pattern.
+- Before a connection opens, the SSRF guard validates the destination and pins the addresses it checked. Web content is labeled as untrusted before it enters the context.
 
-## Hooks, comprobaciones y herramientas propias
+## Hooks, checks, and custom tools
 
-- `hooks` tiene cinco eventos con los mismos nombres que en Claude Code: `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop` y `SubagentStop`. Cada entrada tiene `command`, `match` (patrones separados por `|` o `,`) y `timeout` (de 1 a 600 segundos, 10 por defecto). El comando recibe el evento en JSON por stdin.
-- `PreToolUse` puede bloquear una llamada o cambiar sus argumentos. `UserPromptSubmit` puede bloquear un mensaje o añadirle contexto. `PostToolUse` añade notas al resultado.
-- `Stop` y `SubagentStop` pueden pedir que el agente siga trabajando, hasta 8 veces por ejecución.
-- `checks` ejecuta comandos después de cada `edit` o `write` exitoso sobre los archivos que coinciden con `match`. `{file}` se sustituye por la ruta. Las comprobaciones de `kind: "format"` corren primero y pueden reescribir el archivo. El tiempo máximo por defecto es de 30 segundos.
-- `custom_tools` define herramientas propias con `name`, `description`, `command` y `stdin`. Piden aprobación como cualquier comando.
-- `tools.disabled` desactiva herramientas por nombre.
+- `hooks` defines commands for five events: `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, and `SubagentStop`. Each entry has a `command`, an optional `match` (patterns separated by `|` or `,`), and an optional `timeout` (from 1 to 600 seconds, 10 by default). phycode sends the event to the command as JSON on stdin.
+- `PreToolUse` can block a call or change its arguments. `UserPromptSubmit` can block a prompt or add context to it. `PostToolUse` adds notes to a tool result.
+- `Stop` and `SubagentStop` can ask the agent to continue. This happens at most 8 times per run.
+- `checks` runs commands after each successful `edit` or `write` whose path matches `match`. The placeholder `{file}` is replaced with the path. Checks of `kind: "format"` run before the others and may rewrite the file. The default timeout is 30 seconds, and the maximum is 300.
+- `custom_tools` defines tools that run a command. Each one has a `name`, a `description`, a `command`, and `stdin`. They ask for approval like any other command.
+- `tools.disabled` removes tools by name.
 
-## Sesiones, contexto y compactación
+## Sessions, context, and compaction
 
-- Cada ejecución guarda una transcripción en formato JSON Lines dentro de `.phycode/sessions/`, y una sesión que puedes retomar con `-c`, `-r ID`, `/sessions` o `/sessions switch ID`.
-- phycode escribe un `.gitignore` con `*` dentro de `.phycode`, así que git ignora todo lo que escribe el agente.
-- `AGENTS.md` o `CLAUDE.md` del proyecto, y los del usuario en `~/.config/phycode/`, se añaden al prompt de sistema. Se recortan a `limits.agents_md_bytes`, 6144 bytes por defecto. `/init` escribe `AGENTS.md` después de tu aprobación.
-- La compactación automática empieza cuando el contexto llega a la ventana menos un colchón. La ventana es `context.max` si la fijas, o la del modelo en otro caso. El colchón es `context.buffer`, o el mayor entre 200 tokens y el 2 % de la ventana. phycode resume los turnos antiguos con el modelo y conserva el último cuarto de la ventana tal cual. `context.auto_compact: false` la desactiva. `/compact` la lanza a mano.
-- `/context max N` (o `Nk`, u `off`) fija la ventana de referencia. `off` usa la del modelo. Con `--save`, lo guarda en la configuración.
-- Cada turno que cambia archivos guarda copias previas. `/diff`, `/undo`, `/redo` y `/rewind TURNO` las usan.
+- Each run writes a transcript in JSON Lines format to `.phycode/sessions/`. Resume a session with `-c` (the most recent one), with `-r <ID>`, or from chat with `/sessions`.
+- phycode writes a `.gitignore` file that contains `*` inside `.phycode/`, so Git ignores everything the tool writes there.
+- `AGENTS.md` or `CLAUDE.md` in the project, and the same files in `~/.config/phycode/`, are added to the system prompt. They are truncated to `limits.agents_md_bytes` (6144 bytes by default). `/init` writes `AGENTS.md` after you approve the change.
+- Automatic compaction starts when the context reaches the window minus a buffer. The window is `context.max` when you set it, and the model's window otherwise. The buffer is `context.buffer` when you set it, and the larger of 200 tokens and 2 percent of the window otherwise. phycode summarizes the older turns with the model, and keeps the newest turns that fit in the last quarter of the window. Set `context.auto_compact` to `false` to turn automatic compaction off. Run `/compact` to compact manually.
+- `/context max <TOKENS>` changes the window. Add `--save` to store the value in the configuration.
+- `/handoff` writes a summary for a new session. The summary is saved in `.phycode/handoffs`.
+- Before a turn changes a file, phycode stores the previous contents in `.phycode/checkpoints`. `/diff`, `/undo`, `/redo`, and `/rewind` use these copies.
 
-## Integraciones
+## Integrations
 
-- ACP: `phycode acp` habla Agent Client Protocol por stdin y stdout, en la versión 1. Ofrece los modos de permisos Ask, Accept edits, Plan y Do not ask.
-- RPC: `phycode rpc` usa JSON por líneas en stdin y stdout. Es el backend de `phycode -t`.
-- Serve: `phycode serve` es un demonio con varios clientes. Escucha en un socket Unix (por defecto, `$XDG_RUNTIME_DIR/phycode/serve.sock`, o `/tmp/phycode-UID/serve.sock`, en una carpeta tuya con modo 0700), o en `--listen 127.0.0.1:PUERTO` con un token (`--token-file`). Cada cliente envía primero `{"type":"hello","token":"...","cwd":"/ruta"}`. Quien se conecta usa tus herramientas, así que protege el socket y el token.
-- SSH y despliegues: los hosts van en `ssh.hosts` y los objetivos en `deploy.targets`. Los objetivos pueden usar Cloudflare, Vercel, Docker, Modal, SSH o un comando propio. Comandos: `phycode ssh` y `phycode deploy`.
-- gentle-ai: herramienta externa (MIT) que instala y mantiene skills, personas y presets de MCP para agentes de código. `/gentle` muestra su estado y ejecuta sus comandos después de tu aprobación. `gentle_ai.bin` fija la ruta del binario, y `/persona` cambia la persona de las respuestas del chat.
+- Agent Client Protocol (`phycode acp`). The agent speaks protocol version 1 over stdin and stdout. It offers four permission modes: Ask, Accept edits, Plan, and Do not ask.
+- RPC (`phycode rpc`). JSON lines over stdin and stdout. The full-screen interface uses it as its backend.
+- Serve daemon (`phycode serve`). One process serves several clients. It listens on a Unix socket, by default `$XDG_RUNTIME_DIR/phycode/serve.sock` or `/tmp/phycode-UID/serve.sock`, in a folder that you own with mode 0700. With `--listen`, it can listen on a loopback address instead, which requires a token (`--token-file`). Each client sends a `hello` message with the token and the project folder first. Anyone who connects can use your tools, so protect the socket and the token.
+- SSH and deployments. Hosts are defined in `ssh.hosts`, and deployment targets in `deploy.targets`. Targets can use Cloudflare, Vercel, Docker, Modal, SSH, or a custom command. Manage them with `phycode ssh` and `phycode deploy`.
+- gentle-ai. The optional integration shows the gentle-ai status with `/gentle`, and runs its commands after you approve each one. `gentle_ai.bin` sets the path to the binary, and `/persona` sets the persona of the chat replies.
 
-## Arquitectura
+## Architecture
 
-| Carpeta | Responsabilidad |
-|---|---|
-| `src/Agent` | Bucle del agente (`AgentRunner`), políticas de herramientas, subagentes, hooks, comprobaciones y definición de agentes. |
-| `src/Cli` | Arranque, comandos de la CLI, cableado (`Kernel`), chat y comandos de chat. |
-| `src/Config` | Carga y validación de `config.json`, perfiles, sandbox, límites y presets de proveedores y de búsqueda. |
-| `src/Llm` | Clientes de `openai`, `openai-responses`, `anthropic` y `ollama`; reintentos, SSE, caché de capacidades, precios y esfuerzo. |
-| `src/Tools` | Las herramientas que ve el modelo, y su registro. |
-| `src/Security` | Permisos, reglas, línea dura, rutas seguras, archivos secretos y análisis de comandos. |
-| `src/Exec` | Ejecución en el host, con bwrap, Podman y Docker. Filtro de dominios y procesos en segundo plano. |
-| `src/Git` | Políticas de `git` y `gh`. |
-| `src/Mcp` | Cliente MCP (stdio y HTTP), OAuth y búsqueda de herramientas. |
-| `src/Skills` | Catálogo, escaneo y escritura de skills. |
-| `src/Web` | Búsqueda con siete backends, lectura de páginas, guardia SSRF y caché. |
-| `src/Review`, `src/Research`, `src/Btw` | `/review`, `/deepresearch` y `/btw`. |
-| `src/Checkpoint` | Deshacer, rehacer y rebobinar por turno. |
-| `src/Session` | Sesiones, transcripciones, compactación y presupuesto de contexto. |
-| `src/Context` | Carga de `AGENTS.md` y `CLAUDE.md`. |
-| `src/Rpc`, `src/Acp`, `src/Serve` | Protocolos para la interfaz, los editores y los clientes remotos. |
-| `src/Tui`, `src/Ui` | Interfaz de respaldo en PHP, y salidas (consola y `stream-json`). |
-| `src/Ssh`, `src/Deploy` | Hosts SSH y despliegues, con sus drivers. |
-| `src/Gentle` | Integración con gentle-ai. |
-| `src/RepoMap` | Mapa de símbolos del código. |
-| `src/Memory` | Notas persistentes. Aún no están conectadas (ver Limitaciones). |
-| `src/Diff`, `src/Support` | Diferencias, bóveda de claves, redacción, JSON y estado. |
-| `tui/` | Interfaz de pantalla completa en Go, con Bubble Tea, Lip Gloss y Glamour. |
-| `resources/` | Agentes integrados y personas. |
-| `docs/security/` | Auditoría de seguridad del 21 de octubre de 2026. |
+| Directory | Responsibility |
+| --- | --- |
+| `src/Agent` | The agent loop (`AgentRunner`), tool policies, subagents, hooks, checks, and agent definitions |
+| `src/Cli` | The entry point, the CLI commands, the `Kernel` that wires the runtime together, chat, and chat commands |
+| `src/Config` | Loading and validation of `config.json`, profiles, sandbox, limits, and provider and search presets |
+| `src/Llm` | Clients for `openai`, `openai-responses`, `anthropic`, and `ollama`, with retries, server-sent events, a capability cache, pricing, and effort mapping |
+| `src/Tools` | The tools that the model can call, and the tool registry |
+| `src/Security` | Permissions, rules, the hard line, path containment, secret files, and command analysis |
+| `src/Exec` | Command execution on the host and in bubblewrap, Podman, and Docker, with domain filtering and background jobs |
+| `src/Git` | The Git and GitHub CLI policies |
+| `src/Mcp` | The MCP client (stdio and HTTP), OAuth, and deferred tool search |
+| `src/Skills` | The skill catalog, scanner, and writer |
+| `src/Web` | Search backends, page fetching, the SSRF guard, and the cache |
+| `src/Review`, `src/Research`, `src/Btw` | The `/review`, `/deepresearch`, and `/btw` commands |
+| `src/Checkpoint` | File snapshots per turn, for `/undo`, `/redo`, and `/rewind` |
+| `src/Session` | Sessions, transcripts, compaction, and the context budget |
+| `src/Context` | Loading of `AGENTS.md` and `CLAUDE.md` |
+| `src/Rpc`, `src/Acp`, `src/Serve` | Protocols for the full-screen interface, for editors, and for remote clients |
+| `src/Tui`, `src/Ui` | The built-in PHP interface, console output, and `stream-json` output |
+| `src/Ssh`, `src/Deploy` | SSH hosts, and deployment drivers |
+| `src/Gentle` | The gentle-ai integration |
+| `src/RepoMap` | The symbol map of the codebase |
+| `src/Memory` | Memory notes. Not connected yet. See [Known limitations](#known-limitations). |
+| `src/Diff`, `src/Support` | Diffs, the key vault, redaction, JSON helpers, and state storage |
+| `tui/` | The full-screen interface in Go, built with Bubble Tea, Lip Gloss, and Glamour |
+| `resources/` | The built-in agents and personas |
 
-## Desarrollo y pruebas
+## Development
+
+### Build
 
 ```sh
-vendor/bin/phpunit
-(cd tui && go test -race ./...)
+composer install
+(cd tui && go build -o ../bin/phycode-tui ./cmd/phycode-tui)
 ```
 
-- Los tests unitarios usan respuestas simuladas del modelo, repositorios git temporales y un runtime de contenedores falso. No necesitan un servidor de modelos ni un demonio de contenedores.
-- Los tests que necesitan `bwrap` se omiten si no está instalado.
-- La auditoría del 21 de octubre de 2026 registra 4 544 tests unitarios y 21 de integración, y todos pasan. Los tests de Go también pasan, y `go test -race` pasa en `backend`, `app` y `view`.
-- Los fixtures grabados están en `tests/Fixtures`: respuestas de llama-server (b11721) y de otros proveedores.
+Build the PHAR archive with `php bin/build-phar build/phycode.phar`. See [Build a PHAR archive](#build-a-phar-archive).
 
-## Seguridad
+### Test
 
-El modelo se trata como una fuente no confiable. Puede recibir instrucciones inyectadas desde páginas web, archivos del repositorio, respuestas de MCP o skills. `docs/security/AUDIT-2026-10-21.md` describe el modelo de amenazas, los hallazgos corregidos y los riesgos residuales.
+```sh
+vendor/bin/phpunit                     # unit and integration suites
+vendor/bin/phpunit --testsuite unit    # unit suite only
+(cd tui && go test -race ./...)        # Go tests
+```
 
-Los permisos `ask` no son un límite de seguridad. Para los comandos de shell, el límite real es un sandbox de contenedor.
+The unit tests use scripted model replies and temporary Git repositories, so they need neither a model server nor a container runtime. The integration tests start the RPC backend as a separate process. Tests that require bubblewrap are skipped when `bwrap` is not installed.
 
-Actualiza PHP antes de usar phycode. La auditoría indica que PHP 8.4.26 es anterior al parche del 21 de octubre de 2026 para CVE-2026-109618 y CVE-2026-109619.
+### Lint and format
 
-## Limitaciones conocidas
+```sh
+(cd tui && go vet ./... && gofmt -l .)
+```
 
-- Ollama solo está probado con fixtures, porque no había un modelo de chat instalado para probarlo en vivo.
-- Las notas persistentes (`src/Memory/MemoryStore.php`) tienen límites por ámbito y rechazan secretos, pero no están conectadas a ninguna herramienta ni al prompt.
-- `run_code` no pasa por la línea dura. Su protección es el sandbox.
-- Un archivo secreto renombrado a un nombre que no lo parece puede leerse por ese nombre nuevo, una vez aprobado el movimiento. La aprobación muestra los dos nombres.
-- Con respuestas muy largas (unos 120 KB), la interfaz de Go consume bastante CPU mientras la respuesta se transmite, porque renderiza el markdown en cada fragmento. La auditoría lo registra como G-1 y no está resuelto.
+`gofmt -l` lists the files that need formatting. A clean run prints nothing.
 
-## Frente a otros agentes
+### Smoke test
 
-Esta tabla resume lo que cada proyecto declara en su README y en su documentación dentro del repositorio, con fecha de revisión del 21 de octubre de 2026. Para escribirla no se leyó el código de los otros proyectos.
+```sh
+bin/phycode version
+bin/phycode agents
+bin/phycode doctor --cwd .
+```
+
+`doctor` exits with status 1 when a check fails, for example when no model server is running. `version` and `agents` do not depend on a model server.
+
+## Known limitations
+
+- Ollama is covered only by recorded fixtures. No chat model was installed for a live test.
+- The memory notes in `src/Memory/MemoryStore.php` enforce scope and secret rules, but no tool or prompt uses them yet.
+- `run_code` does not pass through the hard line. The sandbox is its protection.
+- If a secret file is renamed to a name that does not look like a secret, an approved move exposes its content under the new name. The approval prompt shows both names.
+- For very long answers (about 120 KB), the Go interface uses a lot of CPU while the answer streams, because it renders Markdown for each chunk. This issue is known, and it is not fixed yet.
+
+## Comparison with other coding agents
+
+The table summarizes what each project's public README and documentation state as of 21 October 2026. The comparison does not describe the other projects' source code. "Not described" means that the public documentation does not cover the topic.
 
 | | phycode | pi | Hermes Agent | OpenCode | Claude Code | Codex |
-|---|---|---|---|---|---|---|
-| Licencia | Propietaria | MIT | MIT | MIT | Todos los derechos reservados. El CLI no está en el repositorio público | Apache-2.0 |
-| Lenguaje | PHP 8.4 y Go | TypeScript | Python | TypeScript | Solo plugins, ejemplos y scripts en el repositorio público | Rust, con SDK en TypeScript y Python |
-| Modelos | llama.cpp, Ollama, OpenAI, Anthropic, OpenRouter, Groq y compatibles | Varios proveedores (`pi-ai`) | Varios, incluido Nous Portal y OpenRouter | No detallado en su README | Modelos Claude | Cuenta de ChatGPT o clave de API de OpenAI |
-| Permisos y sandbox | Cinco modos, reglas, línea dura, sandbox con bwrap, Podman o Docker | Sin sistema de permisos. Recomienda contenedores | Modos `smart`, `manual` y `off`. Siete backends de terminal | Agente `plan` sin edición, y bash con permiso | Modos de permisos. CI con firewall de salida | Documentación en la web de OpenAI |
-| Subagentes | Un nivel, contexto propio, permisos heredados | Sin subagentes, por diseño | `delegate_task`, hasta 10 en paralelo por defecto | Subagente `general`, invocable con `@general` | Agentes dentro de plugins | No descritos en el repositorio |
-| Skills y memoria | `SKILL.md`, `AGENTS.md` y sesiones. Las notas persistentes aún no están conectadas | Skills con la especificación Agent Skills. Sesiones en árbol con ramas | Skills que el agente crea y mejora. `MEMORY.md` y `USER.md` | No descritas en su README | Skills y comandos dentro de plugins | `AGENTS.md`. Resto en la web de OpenAI |
-| Extensiones | Hooks (cinco eventos), comprobaciones, herramientas propias y MCP | Extensiones TypeScript en el proceso, paquetes npm o git, MCP y codemode | Cuatro sistemas de hooks, plugins y MCP | API de plugins en `packages/plugin` | Plugins con comandos, agentes, hooks y MCP | Hooks gestionados por administradores. Resto en la web |
-| Interfaces | Chat, pantalla completa en Go, `run`, RPC, ACP y `serve` | Pantalla completa, modo impresión y JSON, RPC y SDK | CLI, gateways de mensajería, escritorio y cron | Terminal y app de escritorio (beta) | Terminal, IDE y `@claude` en GitHub | CLI, extensión de IDE, app de escritorio y web |
+| --- | --- | --- | --- | --- | --- | --- |
+| License | Apache-2.0 | MIT | MIT | MIT | Proprietary, all rights reserved | Apache-2.0 |
+| Languages | PHP 8.4, Go | TypeScript | Python | TypeScript | Plugins, examples, and scripts in the public repository | Rust, with TypeScript and Python SDKs |
+| Models | llama.cpp, Ollama, OpenAI, Anthropic, OpenRouter, Groq, and compatible servers | Several providers through `pi-ai` | Several, including Nous Portal and OpenRouter | Not described | Claude models | A ChatGPT account, or an OpenAI API key |
+| Permissions and sandboxing | Five permission modes, rules, a hard line, and bubblewrap, Podman, or Docker sandboxes | No built-in permission system. Recommends containers | `smart`, `manual`, and `off` approval modes. Seven terminal backends | A plan agent without edits. Bash requires approval | Permission modes. CI workflows run behind an egress firewall | Documented on the OpenAI website |
+| Subagents | One level, fresh context, inherited permissions | None, by design | `delegate_task`, up to 10 in parallel by default | The `general` subagent, invoked with `@general` | Agents inside plugins | Not described |
+| Skills and memory | `SKILL.md` skills, `AGENTS.md`, and sessions. Memory notes are not connected yet | The Agent Skills specification. A session tree with branches | Skills that the agent creates and improves. `MEMORY.md` and `USER.md` | Not described | Skills and commands inside plugins | `AGENTS.md`. The rest is on the OpenAI website |
+| Extensions | Hooks with five events, checks, custom tools, and MCP | TypeScript extensions in the process, npm or git packages, MCP, and codemode | Four hook systems, plugins, and MCP | A plugin API in `packages/plugin` | Plugins with commands, agents, hooks, and MCP | Hooks managed by administrators. The rest is on the OpenAI website |
+| Interfaces | Chat, a full-screen Go interface, `run`, RPC, ACP, and `serve` | A full-screen interface, print and JSON modes, RPC, and an SDK | A CLI, messaging gateways, a desktop app, and cron | A terminal interface and a desktop app (beta) | Terminal, IDE, and `@claude` on GitHub | CLI, IDE extension, desktop app, and web |
 
-## Licencia
+## Contributing
 
-Propietaria. `composer.json` la declara como `proprietary`, y el repositorio no incluye un archivo LICENSE.
+Report bugs and ask questions by opening an issue in the repository. Before you change the code, run the tests described in [Development](#development). Pull requests are welcome. For large changes, open an issue first so that the design can be discussed.
+
+## License
+
+phycode is licensed under the [Apache License, Version 2.0](LICENSE). The SPDX identifier is `Apache-2.0`.
+
+Copyright 2026 the phycode authors.

@@ -109,6 +109,17 @@ The script copies `src/`, `resources/`, and the launcher into a temporary folder
 php build/phycode.phar version
 ```
 
+### Linux distributions
+
+phycode runs on Linux only. The hard line reads the users, the mounts, and the folder layout of the machine it runs on, so it needs no setting for each distribution. The end-to-end test in [Test](#test) passed on these images on 21 October 2026, each started new with Podman:
+
+| Distribution | Image | PHP | Packages the test installs | Notes |
+| --- | --- | --- | --- | --- |
+| Debian 13 (trixie) | `debian:trixie-slim` | 8.4.27 | `php8.4-cli`, `php8.4-curl`, `php8.4-mbstring`, `php8.4-xml`, `composer`, `git` | `/bin`, `/lib`, and `/sbin` are links into `/usr`. `login.defs` sets the UIDs of people to 1000 to 60000. |
+| Alpine 3.24 | `alpine:latest` | 8.5.12 | `php85` with `curl`, `mbstring`, `posix`, `pcntl`, `phar`, `openssl`, `iconv`, `tokenizer`, `dom`, `xml`, `xmlwriter`, and `ctype`, then `composer`, `bash`, `git`, `coreutils` | The `composer` package runs on PHP 8.5, so install the `php85-*` extensions, not `php84-*`. `/bin` and `/usr/bin` are separate folders, and both are on `PATH`. There is no `login.defs`, so phycode counts UIDs 1000 to 60000 as people. |
+| Arch Linux | `archlinux:latest` | 8.5.12 | `php`, `composer`, `git` | The `php` package already loads `curl`, `mbstring`, `posix`, and `pcntl`. `/bin` and `/sbin` are links to `usr/bin`. |
+| openSUSE Tumbleweed | `opensuse/tumbleweed` | 8.5.12 | `php8`, `php8-cli` with `curl`, `mbstring`, `posix`, `pcntl`, `phar`, `openssl`, `tokenizer`, `dom`, `xmlwriter`, `ctype`, `iconv`, and `zip`, then `php-composer2`, `git-core` | `login.defs` is in `/usr/etc`, not in `/etc`. phycode reads it there. |
+
 ## Usage
 
 ### Quick start
@@ -361,7 +372,14 @@ The permission mode comes from `permissions.mode` in the global configuration, o
 - The `rules` section takes `allow`, `ask`, and `deny` lists. Each entry has the form `tool:pattern`, or `*` for every call. For example, `"bash:git status *"` allows `git status`. A chained shell command is allowed only when every segment is allowed. An allow rule never covers `git -c`.
 - phycode evaluates a call in this order: `deny` rules, the hard line, agent restrictions, the permission mode, the `ask` and `allow` rules, and finally your answer.
 
-The hard line refuses a fixed set of destructive commands in every mode and with any approval. It covers recursive deletes of system paths, and shell expansions that hide the same operation, such as `rm -rf /`, `find / -delete`, and `wipefs` on a disk. Inside a Podman or Docker sandbox, `bash` is exempt, because the container is the boundary. The hard line does not inspect the code that `run_code` runs.
+The hard line refuses a fixed set of destructive commands in every mode and with any approval. It covers recursive deletes of system paths, and shell expansions that hide the same operation, such as `rm -rf /`, `find / -delete`, and `wipefs` on a disk. It reads the command of every tool in the `exec` category, whatever the tool's name: `bash`, `ssh`, custom tools, and any exec tool added later. It also reads every step of a deploy target, and refuses the whole deploy before its first step runs. Inside a Podman or Docker sandbox, `bash` is exempt, because the container is the boundary. A tool that runs on the host, such as a custom tool or `ssh`, is not exempt. The hard line does not inspect the code that `run_code` runs.
+
+The target of `rm -r`, `chmod -R`, `chown -R`, `chgrp -R`, or `find -delete` is judged by its shape, not by a list of names. phycode expands `~`, `~USER`, `$HOME`, `..`, symbolic links, and globs, and it resolves a relative path from the project folder. It refuses the target when it is one of these:
+
+- The root, or any folder directly under it, such as `/usr`, `/mnt`, `/media`, or `/srv`.
+- A home folder: any home in `/etc/passwd`, your own `HOME`, and any folder directly under a home root, which covers a neighbour whose account is not in `/etc/passwd`. A home root is the parent of each home whose UID is between `UID_MIN` and `UID_MAX` of `login.defs`, and the base folder of `/etc/default/useradd` (`/home` by default). A folder that holds a home is refused too.
+- A mount point in `/proc/self/mounts`, or a folder that holds one.
+- A folder on `PATH`, the target of a top-level link such as `/bin -> usr/bin`, or a folder directly under a top-level folder that holds a `PATH` folder, such as `/usr/lib`.
 
 phycode redacts configured API keys everywhere, including tool output and saved sessions. Error messages, notices, the model list, and `doctor` also hide URLs with embedded credentials, `Authorization` headers, and keys with the `sk-` prefix. Terminal control sequences are removed before any text is displayed.
 
@@ -493,7 +511,7 @@ Delegation follows these rules:
 - `PreToolUse` can block a call or change its arguments. `UserPromptSubmit` can block a prompt or add context to it. `PostToolUse` adds notes to a tool result.
 - `Stop` and `SubagentStop` can ask the agent to continue. This happens at most 8 times per run.
 - `checks` runs commands after each successful `edit` or `write` whose path matches `match`. The placeholder `{file}` is replaced with the path. Checks of `kind: "format"` run before the others and may rewrite the file. The default timeout is 30 seconds, and the maximum is 300.
-- `custom_tools` defines tools that run a command. Each one has a `name`, a `description`, a `command`, and `stdin`. They ask for approval like any other command.
+- `custom_tools` defines tools that run a command. Each one has a `name`, a `description`, a `command`, and `stdin`. They ask for approval like any other command, and the hard line reads their command.
 - `tools.disabled` removes tools by name.
 
 ## Sessions, context, and compaction
@@ -564,6 +582,19 @@ vendor/bin/phpunit --testsuite unit    # unit suite only
 
 The unit tests use scripted model replies and temporary Git repositories, so they need neither a model server nor a container runtime. The integration tests start the RPC backend as a separate process. Tests that require bubblewrap are skipped when `bwrap` is not installed.
 
+### End-to-end test
+
+```sh
+tests/E2e/containers.sh                            # Debian, Alpine, Arch, and openSUSE
+tests/E2e/containers.sh debian                     # one distribution: debian, alpine, arch, or opensuse
+PHYCODE_E2E_NETWORK=host tests/E2e/containers.sh   # when the container network has no DNS
+PHYCODE_E2E_RUNTIME=docker tests/E2e/containers.sh # Docker instead of Podman
+```
+
+`tests/E2e/hard-line.php` runs `phycode run --yolo` against a scripted model, and asks for destructive commands through `bash`, a custom tool, and a deploy step. The targets are a neighbour's home (in `/etc/passwd`, missing from it, by `~neighbour`, and by glob), `/mnt`, `/media`, a mounted tmpfs and the folder that holds it, `/usr/bin`, `/usr/lib`, and the contents of the home folder reached from the project with `../*`. The test passes when each call is refused, each folder still exists, and the same three tools still delete a folder of the project. The script deletes real folders when the hard line fails, so it refuses to run outside a container or as a user other than root.
+
+`containers.sh` starts a new container for each distribution, installs PHP and Composer from the distribution's packages, mounts a tmpfs at `/srv/disk/vol`, and creates the user `neighbour`. It copies the repository without `vendor`, runs `composer install`, and then runs the end-to-end script and the security and deploy unit tests. See [Linux distributions](#linux-distributions) for the results.
+
 ### Lint and format
 
 ```sh
@@ -587,6 +618,9 @@ bin/phycode doctor --cwd .
 - Ollama is covered only by recorded fixtures. No chat model was installed for a live test.
 - The memory notes in `src/Memory/MemoryStore.php` enforce scope and secret rules, but no tool or prompt uses them yet.
 - `run_code` does not pass through the hard line. The sandbox is its protection.
+- The hard line judges an `ssh` command with the users, the mounts, and the `PATH` of this machine, not of the remote host. A relative path is resolved from the project folder, not from a folder that an earlier `cd` in the same command moved to.
+- A folder two or more levels below the root, such as `/usr/local/lib`, is on the hard line only when it is on `PATH`, is or holds a home, or is or holds a mount point. `/var/lib` is refused on most machines because the home of a system account is inside it, but that depends on the machine.
+- The hard line reads the summary of every exec tool as a command, so an `oracle` question that quotes a destructive command, for example in backticks, is refused too. Rephrase the question.
 - If a secret file is renamed to a name that does not look like a secret, an approved move exposes its content under the new name. The approval prompt shows both names.
 - For very long answers (about 120 KB), the Go interface uses a lot of CPU while the answer streams, because it renders Markdown for each chunk. This issue is known, and it is not fixed yet.
 

@@ -2,7 +2,7 @@
     "name": "phycode/phycode",
     "description": "Local coding agent for llama.cpp servers with multi-agent delegation",
     "type": "project",
-    "license": "proprietary",
+    "license": "Apache-2.0",
     "require": {
         "php": ">=8.4.1",
         "ext-curl": "*",

@@ -49,7 +49,7 @@ final class BwrapRunnerTest extends TestCase
 
     private function stand(): string
     {
-        return '/bin/true';
+        return is_executable('/bin/true') ? '/bin/true' : '/usr/bin/true';
     }
 
     private function runner(string $network = 'none', array $allow = [], bool $private = false): BwrapRunner

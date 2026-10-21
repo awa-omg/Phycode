@@ -137,7 +137,7 @@ final class CheckpointStoreTest extends TestCase
     public function testAPathThatIsNotUtf8IsRefusedBecauseTheIndexCouldNotKeepIt(): void
     {
         $name = "src/bad-\xff.txt";
-        Kit::write($this->root . '/' . $name, "x\n");
+        @Kit::write($this->root . '/' . $name, "x\n");
         $this->store->begin('turn-1');
 
         $this->expectException(CheckpointException::class);

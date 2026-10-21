@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
-if (!is_file('/run/.containerenv') && !is_file('/.dockerenv')) {
-    fwrite(STDERR, "this test deletes real folders if the hard line fails, so it runs only inside a throwaway container: tests/E2e/containers.sh\n");
+require dirname(__DIR__, 2) . '/vendor/autoload.php';
+
+if (!is_file('/run/.containerenv') && !is_file('/.dockerenv') && getenv('PHYCODE_E2E_DISPOSABLE') !== '1') {
+    fwrite(STDERR, "this test deletes real folders if the hard line fails, so it runs only inside a throwaway container (tests/E2e/containers.sh) or a throwaway machine (PHYCODE_E2E_DISPOSABLE=1)\n");
     exit(2);
 }
 if (posix_geteuid() !== 0) {
@@ -48,17 +50,22 @@ function plant(string $folder): void
 
 function mounted(string $path): bool
 {
-    foreach (file('/proc/self/mounts', FILE_IGNORE_NEW_LINES) ?: [] as $line) {
-        if ((explode(' ', $line)[1] ?? '') === $path) {
-            return true;
+    if (is_readable('/proc/self/mounts')) {
+        foreach (file('/proc/self/mounts', FILE_IGNORE_NEW_LINES) ?: [] as $line) {
+            if ((explode(' ', $line)[1] ?? '') === $path) {
+                return true;
+            }
         }
-    }
 
-    return false;
+        return false;
+    }
+    exec('/sbin/mount', $lines);
+
+    return in_array($path, \Phycode\Security\HardLine::mountsFrom($lines), true);
 }
 
 if (!mounted($mount)) {
-    fwrite(STDERR, "{$mount} is not a mount point; start the container with --mount type=tmpfs,destination={$mount}\n");
+    fwrite(STDERR, "{$mount} is not a mount point; mount a tmpfs there (a container: --mount type=tmpfs,destination={$mount}; FreeBSD: mount -t tmpfs tmpfs {$mount})\n");
     exit(2);
 }
 if (posix_getpwnam('neighbour') === false) {

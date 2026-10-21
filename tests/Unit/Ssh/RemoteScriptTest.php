@@ -66,6 +66,9 @@ final class RemoteScriptTest extends TestCase
 
     public function testACommandThatRunsPastTheLimitIsEndedByTheHost(): void
     {
+        if (ProcessRunner::which('timeout') === null) {
+            self::markTestSkipped('the host has no timeout program, so the script has nothing to end the command with');
+        }
         $started = microtime(true);
         $result = $this->onHost(['sleep', '44'], null, 1);
 

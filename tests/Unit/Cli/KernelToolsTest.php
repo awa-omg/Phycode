@@ -8,6 +8,7 @@ use Phycode\Agent\RunPolicy;
 use Phycode\Cli\Kernel;
 use Phycode\Config\Config;
 use Phycode\Config\ConfigException;
+use Phycode\Exec\ProcessRunner;
 use Phycode\Llm\ClientProvider;
 use Phycode\Tests\Support\Kit;
 use Phycode\Tests\Support\RecordingUi;
@@ -185,7 +186,12 @@ final class KernelToolsTest extends TestCase
         $offered = $this->offered();
 
         self::assertContains('bash', $offered);
-        self::assertContains('run_code', $offered);
+        $interpreters = array_filter(['python3', 'node'], static fn (string $program): bool => ProcessRunner::which($program) !== null);
+        if ($interpreters === []) {
+            self::assertNotContains('run_code', $offered, 'run_code is offered only when an interpreter is installed');
+        } else {
+            self::assertContains('run_code', $offered);
+        }
     }
 
     public function testWithAReadOnlyFolderTheShellIsNotRegisteredAndTheReadToolsAre(): void

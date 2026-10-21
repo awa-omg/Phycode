@@ -22,7 +22,7 @@ final class KitCleanupTest extends TestCase
 
         self::assertSame(3, $status, (string) file_get_contents($output . '/stderr.txt'));
         $folder = $this->printedFolder($output);
-        self::assertStringStartsWith('/tmp/opencode/phpunit-kit-child-', $folder);
+        self::assertStringStartsWith(realpath('/tmp') . '/opencode/phpunit-kit-child-', $folder);
         self::assertDirectoryDoesNotExist($folder, 'the folder and everything in it are removed when the process ends');
         self::assertSame("keep\n", file_get_contents($outside . '/keep.txt'), 'the link is removed and its target is kept');
     }

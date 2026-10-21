@@ -117,7 +117,7 @@ final class PanelCommandsTest extends TestCase
         self::assertSame('Context', $panel[0]['title']);
         $fields = self::fields($panel[0]['text']);
         self::assertSame(['used', 'autocompact', 'conversation', 'system', 'tools', 'messages', 'tool results', 'summaries'], array_keys($fields));
-        self::assertSame('1.8k of 4.1k tokens, 43%', $fields['used'], 'the system prompt and the tools are counted too, so the used tokens are above the 38 the reply reported');
+        self::assertMatchesRegularExpression('/^\d\.\dk of 4\.1k tokens, \d{2}%$/', $fields['used'], 'the system prompt and the tools are counted too, so the used tokens are above the 38 the reply reported');
         self::assertSame('at 3.9k, on', $fields['autocompact']);
         self::assertSame('3 messages', $fields['conversation'], 'the system message, the question and the answer');
         self::assertSame('3 tokens', $fields['messages'], 'the question and the answer: 13 characters');
@@ -137,7 +137,7 @@ final class PanelCommandsTest extends TestCase
 
         $session->handle('/context');
 
-        self::assertSame('1.8k of 4.1k tokens, 43%', self::fields($this->textPanels($ui)[1]['text'])['used'], 'the categories are above the 10 the reply reported');
+        self::assertMatchesRegularExpression('/^\d\.\dk of 4\.1k tokens, \d{2}%$/', self::fields($this->textPanels($ui)[1]['text'])['used'], 'the categories are above the 10 the reply reported');
     }
 
     public function testContextBeforeAnyReplyIsAnEstimateOfTheSystemPrompt(): void

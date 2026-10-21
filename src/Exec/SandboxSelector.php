@@ -50,6 +50,10 @@ final class SandboxSelector
     private function container(string $runtime): CommandRunner
     {
         if ($runtime === 'bwrap') {
+            if (PHP_OS_FAMILY !== 'Linux') {
+                throw new PhycodeException("sandbox 'bwrap' needs bubblewrap, which works only on Linux; on " . PHP_OS_FAMILY . ' use podman or docker, or run on the host');
+            }
+
             return new BwrapRunner($this->host, $this->settings->network, $this->settings->allowDomains, $this->root);
         }
         if ($this->settings->image === null) {

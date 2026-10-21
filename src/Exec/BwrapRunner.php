@@ -91,7 +91,7 @@ final class BwrapRunner implements CommandRunner, Backgroundable
 
     public static function available(): bool
     {
-        return ProcessRunner::which('bwrap') !== null;
+        return PHP_OS_FAMILY === 'Linux' && ProcessRunner::which('bwrap') !== null;
     }
 
     public function proxyLog(): string

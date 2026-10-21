@@ -702,7 +702,12 @@ final class Application
             $line("extension {$extension}", extension_loaded($extension));
         }
         $write('[--] extension pcntl          ' . (extension_loaded('pcntl') ? 'available (Ctrl+C cancels turns)' : 'missing (Ctrl+C ends the process)') . "\n");
-        foreach (['timeout', 'bash', 'git', 'python3', 'node', 'rg', 'podman', 'docker', 'bwrap', 'socat'] as $binary) {
+        $write(sprintf("[%s] %-22s %s\n", ProcessRunner::timeoutProgram() !== null ? 'ok' : '--', 'timeout', ProcessRunner::timeoutProgram() ?? match (PHP_OS_FAMILY) {
+            'BSD' => 'not used: it waits for every process a command leaves behind, so phycode enforces the time limits itself',
+            'Darwin' => 'not found (brew install coreutils provides gtimeout); phycode enforces the time limits itself',
+            default => 'not found; phycode enforces the time limits itself',
+        }));
+        foreach (['bash', 'git', 'python3', 'node', 'rg', 'podman', 'docker', ...(PHP_OS_FAMILY === 'Linux' ? ['bwrap', 'socat'] : [])] as $binary) {
             $found = ProcessRunner::which($binary);
             $write(sprintf("[%s] %-22s %s\n", $found !== null ? 'ok' : '--', $binary, $found ?? 'not found'));
         }

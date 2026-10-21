@@ -8,16 +8,18 @@ final class HardLine
 {
     private const DISK = '(?:sd|hd|vd|xvd|nvme|mmcblk)';
     private const DISK_PROGRAMS = ['wipefs', 'shred', 'blkdiscard', 'mkswap', 'mke2fs'];
-    private const SYSTEM = ['/bin', '/boot', '/dev', '/etc', '/home', '/lib', '/lib32', '/lib64', '/libx32', '/opt', '/proc', '/root', '/run', '/sbin', '/srv', '/sys', '/usr', '/var'];
     private const CHANGERS = ['rm', 'chmod', 'chown', 'chgrp'];
+    private const MAX_MATCHES = 1024;
 
-    public static function reason(string $tool, string $summary): ?string
+    private static ?string $cwd = null;
+    private static ?array $facts = null;
+
+    public static function reason(string $summary, ?string $cwd = null): ?string
     {
-        $parts = ShellCommand::of($tool, $summary);
-        if ($parts === null) {
-            return null;
-        }
-        foreach (self::readings($parts[1]) as $reading) {
+        $at = strpos($summary, ': ');
+        self::$cwd = $cwd === null || $cwd === '' ? null : $cwd;
+        self::$facts = null;
+        foreach (self::readings($at === false ? $summary : substr($summary, $at + 2)) as $reading) {
             $reason = self::reasonIn($reading);
             if ($reason !== null) {
                 return $reason;
@@ -106,17 +108,17 @@ final class HardLine
                 return 'rm --no-preserve-root';
             }
             if ($recursive && self::wipes($targets)) {
-                return 'rm -r of the root, the home folder or a system folder';
+                return 'rm -r of the root, a home folder, a system folder or a mount point';
             }
             if ($recursive && $named && array_filter($targets, static fn (string $target): bool => !str_starts_with($target, '{')) === []) {
-                return 'rm -r of what xargs reads, after a word that names the root or a system folder';
+                return 'rm -r of what xargs reads, after a word that names the root, a home folder, a system folder or a mount point';
             }
         }
         if (in_array($program, ['chmod', 'chown', 'chgrp'], true) && $recursive && self::wipes($targets)) {
-            return "{$program} -R of the root, the home folder or a system folder";
+            return "{$program} -R of the root, a home folder, a system folder or a mount point";
         }
         if ($program === 'find' && in_array('-delete', $flags, true) && self::wipes($targets)) {
-            return 'find -delete of the root, the home folder or a system folder';
+            return 'find -delete of the root, a home folder, a system folder or a mount point';
         }
         if ($program === 'mkfs' || str_starts_with($program, 'mkfs.')) {
             return 'mkfs';
@@ -144,20 +146,130 @@ final class HardLine
 
     private static function owns(string $word): bool
     {
-        if (self::isRoot($word)) {
-            return true;
+        $path = self::absolute($word);
+        if ($path === null) {
+            return false;
         }
-        $bare = rtrim($word, '/*');
-        if (in_array($bare, ['~', '$HOME', '${HOME}'], true) || in_array($bare, self::SYSTEM, true)) {
-            return true;
+        $candidates = [$path];
+        if (preg_match('/[*?\[]/', $path) === 1) {
+            array_push($candidates, ...array_slice(glob($path, GLOB_NOSORT) ?: [], 0, self::MAX_MATCHES));
         }
-        $home = getenv('HOME');
+        foreach ($candidates as $candidate) {
+            $real = realpath($candidate);
+            if (self::guarded(self::normal($candidate)) || ($real !== false && self::guarded($real))) {
+                return true;
+            }
+        }
 
-        return $home !== false && $home !== '' && $bare === rtrim($home, '/');
+        return false;
     }
 
-    private static function isRoot(string $target): bool
+    private static function absolute(string $word): ?string
     {
-        return preg_match('~^/+\*?$~', $target) === 1;
+        $bare = rtrim($word, '/*');
+        if ($bare === '' && str_starts_with($word, '/')) {
+            return '/';
+        }
+        $home = self::facts()['home'];
+        if (preg_match('~^(?:\$HOME|\$\{HOME\}|\~)(?=/|$)~', $bare, $match) === 1) {
+            return $home . substr($bare, strlen($match[0]));
+        }
+        if (preg_match('~^\~([A-Za-z0-9._-]+)(?=/|$)~', $bare, $match) === 1) {
+            $user = posix_getpwnam($match[1]);
+
+            return ($user === false ? dirname($home) . '/' . $match[1] : $user['dir']) . substr($bare, strlen($match[0]));
+        }
+        if (str_starts_with($bare, '/')) {
+            return $bare;
+        }
+
+        return self::$cwd === null ? null : self::$cwd . '/' . $bare;
+    }
+
+    private static function guarded(string $path): bool
+    {
+        if (substr_count($path, '/') <= 1) {
+            return true;
+        }
+        $facts = self::facts();
+        if (in_array($path, $facts['tops'], true) || in_array(dirname($path), $facts['roots'], true)) {
+            return true;
+        }
+        foreach ($facts['held'] as $held) {
+            if ($held === $path || str_starts_with($held, $path . '/')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function facts(): array
+    {
+        if (self::$facts !== null) {
+            return self::$facts;
+        }
+        $home = getenv('HOME');
+        if (!is_string($home) || !str_starts_with($home, '/')) {
+            $user = posix_getpwuid(posix_geteuid());
+            $home = $user === false ? '/' : $user['dir'];
+        }
+        $home = self::normal($home);
+        $defs = (string) (@file_get_contents('/etc/login.defs') ?: @file_get_contents('/usr/etc/login.defs'));
+        $low = preg_match('/^\s*UID_MIN\s+(\d+)/m', $defs, $match) === 1 ? (int) $match[1] : 1000;
+        $high = preg_match('/^\s*UID_MAX\s+(\d+)/m', $defs, $match) === 1 ? (int) $match[1] : 60000;
+        $base = preg_match('/^\s*HOME=(\/\S*)/m', (string) @file_get_contents('/etc/default/useradd'), $match) === 1 ? $match[1] : '/home';
+        $held = [$home];
+        $roots = [dirname($home), self::normal($base)];
+        foreach (@file('/etc/passwd', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
+            $fields = explode(':', $line);
+            if (count($fields) < 7 || !str_starts_with($fields[5], '/')) {
+                continue;
+            }
+            $held[] = self::normal($fields[5]);
+            if ((int) $fields[2] >= $low && (int) $fields[2] <= $high) {
+                $roots[] = dirname(self::normal($fields[5]));
+            }
+        }
+        foreach (@file('/proc/self/mounts', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
+            $point = explode(' ', $line)[1] ?? '';
+            $held[] = self::normal((string) preg_replace_callback('/\\\\([0-7]{3})/', static fn (array $code): string => chr((int) octdec($code[1])), $point));
+        }
+        $tops = [];
+        foreach (@scandir('/') ?: [] as $entry) {
+            $real = realpath('/' . $entry);
+            if ($real !== false) {
+                $tops[] = $real;
+            }
+        }
+        foreach (explode(':', (string) getenv('PATH')) as $entry) {
+            if (str_starts_with($entry, '/')) {
+                $tops[] = $folder = self::normal($entry);
+                if (substr_count(dirname($folder), '/') === 1) {
+                    $roots[] = dirname($folder);
+                }
+            }
+        }
+
+        return self::$facts = [
+            'home' => $home,
+            'held' => array_values(array_diff(array_unique($held), ['/'])),
+            'roots' => array_values(array_unique($roots)),
+            'tops' => array_values(array_unique($tops)),
+        ];
+    }
+
+    private static function normal(string $path): string
+    {
+        $parts = [];
+        foreach (explode('/', $path) as $part) {
+            if ($part === '..') {
+                array_pop($parts);
+            } elseif ($part !== '' && $part !== '.') {
+                $parts[] = $part;
+            }
+        }
+
+        return '/' . implode('/', $parts);
     }
 }

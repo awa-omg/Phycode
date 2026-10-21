@@ -41,7 +41,7 @@ final class HardLineEvasionTest extends TestCase
     #[DataProvider('refused')]
     public function testAHiddenDestructiveCommandIsRefused(string $command): void
     {
-        self::assertNotNull(HardLine::reason('bash', 'bash: ' . $command), $command);
+        self::assertNotNull(HardLine::reason('bash: ' . $command), $command);
     }
 
     public static function allowed(): iterable
@@ -62,6 +62,6 @@ final class HardLineEvasionTest extends TestCase
     #[DataProvider('allowed')]
     public function testAnOrdinaryCommandIsNotOnTheLine(string $command): void
     {
-        self::assertNull(HardLine::reason('bash', 'bash: ' . $command), $command);
+        self::assertNull(HardLine::reason('bash: ' . $command), $command);
     }
 }

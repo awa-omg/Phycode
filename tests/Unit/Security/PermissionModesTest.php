@@ -216,7 +216,7 @@ final class PermissionModesTest extends TestCase
 
             $reason = $permissions->check(self::tool('bash', ToolCategory::Exec), $this->context($ui, $mode), 'bash: cd x && rm -rf /');
 
-            self::assertSame('refused: rm -r of the root, the home folder or a system folder is never run, in any mode and with any approval', $reason, $mode);
+            self::assertSame('refused: rm -r of the root, a home folder, a system folder or a mount point is never run, in any mode and with any approval', $reason, $mode);
             self::assertSame([], $this->confirmations($ui), "{$mode}: nobody is asked about it");
         }
     }

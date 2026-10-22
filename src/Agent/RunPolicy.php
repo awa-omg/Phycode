@@ -8,7 +8,7 @@ use Phycode\Tools\ToolCategory;
 
 final readonly class RunPolicy
 {
-    public const COMPANIONS = ['job' => 'bash'];
+    public const COMPANIONS = ['job' => 'bash', 'memory_save' => 'memory'];
 
     public function __construct(
         public ?array $allowed,

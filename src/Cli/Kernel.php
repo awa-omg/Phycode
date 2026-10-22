@@ -29,6 +29,7 @@ use Phycode\Llm\ModelCatalog;
 use Phycode\Llm\Pricing;
 use Phycode\Llm\UsageMeter;
 use Phycode\Mcp\McpServers;
+use Phycode\Memory\MemoryStore;
 use Phycode\Review\ReviewCommands;
 use Phycode\Security\Permissions;
 use Phycode\Security\Rules;
@@ -61,6 +62,8 @@ use Phycode\Tools\GlobTool;
 use Phycode\Tools\GrepTool;
 use Phycode\Tools\JobTool;
 use Phycode\Tools\ListTool;
+use Phycode\Tools\MemorySaveTool;
+use Phycode\Tools\MemoryTool;
 use Phycode\Tools\MoveTool;
 use Phycode\Tools\OracleTool;
 use Phycode\Tools\ReadTool;
@@ -99,6 +102,7 @@ final class Kernel
     public readonly SshHosts $ssh;
     public readonly UsageMeter $usage;
     public readonly TodoList $todos;
+    public readonly MemoryStore $memory;
     public readonly Deployments $deployments;
     public readonly ?McpServers $mcp;
     public readonly AgentRunner $runner;
@@ -153,6 +157,7 @@ final class Kernel
         $this->jobs = new BackgroundJobs($cacheDir . '/jobs', $this->config->limits->backgroundJobs, $this->config->limits->backgroundLifetime);
         $this->ssh = new SshHosts($this->config->sshHosts(), $this->processes);
         $this->todos = new TodoList();
+        $this->memory = new MemoryStore($root, $configDir);
         $this->deployments = new Deployments($this->config->deployTargets(), new Vault($configDir), $this->processes, $this->ssh, $root);
         $remote = [
             ...($this->ssh->isEmpty() ? [] : [new SshTool($this->ssh, $this->jobs), new SshCopyTool($this->ssh)]),
@@ -178,6 +183,8 @@ final class Kernel
             new TaskTool($this->agents, $this->config->subagentsEnabled),
             new TodoTool($this->todos),
             new SessionSearchTool(new SessionSearch(new SessionStore($root))),
+            new MemoryTool($this->memory, $this->config->memoryEnabled()),
+            new MemorySaveTool($this->memory, $this->config->memoryEnabled(), $this->config->memoryAutonomy()),
             ...($this->config->oracle() === null ? [] : [new OracleTool(fn () => $this->config->oracle(), fn () => $this->providers, fn () => $this->usage)]),
         ];
         $this->laterTools = $this->settings->optionalTools($this->config, $this->ui, $root);
@@ -187,6 +194,7 @@ final class Kernel
         $this->commands = new CommandRegistry();
         $this->commands->add(new \Phycode\Gentle\GentleCommands($this->configFile));
         $this->commands->add(ReviewCommands::fromKernel($this));
+        $this->commands->add(new \Phycode\Memory\MemoryCommands($this->memory));
 
         $this->state = new StateStore(StateStore::defaultFile());
         $this->capabilities = new CapabilityCache($cacheDir . '/capabilities.json');
@@ -383,6 +391,8 @@ final class Kernel
         );
         $persona = Persona::promptBlock(Persona::configured(new GlobalConfig($this->configFile)));
         $prompt = $persona === null ? $prompt : $prompt . "\n\n" . $persona;
+        $notes = $this->config->memoryEnabled() && in_array('memory', ($tools ?? $this->tools)->available($policy), true) ? $this->memory->block() : null;
+        $prompt = $notes === null ? $prompt : $prompt . "\n\n" . $notes;
         $mcp = $this->mcp?->instructions();
 
         return $mcp === null ? $prompt : $prompt . "\n\n" . $mcp;

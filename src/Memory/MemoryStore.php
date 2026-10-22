@@ -72,11 +72,19 @@ final class MemoryStore
             return null;
         }
         $description = is_string($fields['description'] ?? null) ? Text::oneLine($fields['description'], self::DESCRIPTION_CHARS) : '';
+        if ($description === '') {
+            return null;
+        }
 
         return ['name' => $name, 'description' => $description, 'body' => trim($body), 'scope' => $scope];
     }
 
-    public function save(string $scope, string $name, string $description, string $body, array $secrets = []): string
+    public function file(string $scope, string $name): string
+    {
+        return $this->folder($scope) . '/' . self::slug($name) . '.md';
+    }
+
+    public function render(string $scope, string $name, string $description, string $body, array $secrets = []): string
     {
         $slug = self::slug($name);
         $description = trim($description);
@@ -93,14 +101,21 @@ final class MemoryStore
         if (self::looksSecret($description . "\n" . $body, $secrets)) {
             throw new PhycodeException('the note looks like it holds a key, a token or a password, so it is not saved; keep secrets out of notes');
         }
-        $folder = $this->folder($scope);
-        if (!is_file($folder . '/' . $slug . '.md') && count($this->all($scope)) >= self::MAX_NOTES) {
+        if (!is_file($this->file($scope, $slug)) && count($this->all($scope)) >= self::MAX_NOTES) {
             throw new PhycodeException(self::MAX_NOTES . " notes are saved in the {$scope} scope already; forget one first");
         }
-        $this->prepare($scope, $folder);
-        Files::writeAtomic($folder . '/' . $slug . '.md', "---\nname: {$slug}\ndescription: " . Json::encode($description) . "\n---\n" . $body . "\n", 0600);
 
-        return $slug;
+        return "---\nname: {$slug}\ndescription: " . Json::encode($description) . "\n---\n" . $body . "\n";
+    }
+
+    public function save(string $scope, string $name, string $description, string $body, array $secrets = []): string
+    {
+        $content = $this->render($scope, $name, $description, $body, $secrets);
+        $folder = $this->folder($scope);
+        $this->prepare($scope, $folder);
+        Files::writeAtomic($this->file($scope, $name), $content, 0600);
+
+        return self::slug($name);
     }
 
     public function forget(string $scope, string $name): bool
@@ -118,7 +133,11 @@ final class MemoryStore
         $used = 0;
         $hidden = 0;
         foreach (['project' => 'This project', 'user' => 'About the user, in every project'] as $scope => $label) {
-            $notes = $this->all($scope);
+            try {
+                $notes = $this->all($scope);
+            } catch (PhycodeException) {
+                continue;
+            }
             if ($notes === []) {
                 continue;
             }

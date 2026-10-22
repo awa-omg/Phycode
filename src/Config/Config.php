@@ -24,7 +24,7 @@ final readonly class Config
     public const DIFF_VIEWS = ['auto', 'split', 'unified'];
     public const CONTEXT_MIN_TOKENS = 512;
     public const CONTEXT_MAX_TOKENS = 1000000;
-    public const BUILTIN_TOOLS = ['ask_user', 'bash', 'delete', 'deploy', 'deploy_info', 'edit', 'gh_read', 'gh_write', 'git_read', 'git_remote', 'git_write', 'glob', 'grep', 'list', 'move', 'read', 'repo_map', 'run_code', 'session_search', 'skill', 'skill_manage', 'ssh', 'ssh_copy', 'task', 'todo', 'web_fetch', 'web_search', 'write'];
+    public const BUILTIN_TOOLS = ['ask_user', 'bash', 'delete', 'deploy', 'deploy_info', 'edit', 'gh_read', 'gh_write', 'git_read', 'git_remote', 'git_write', 'glob', 'grep', 'list', 'memory', 'move', 'read', 'repo_map', 'run_code', 'session_search', 'skill', 'skill_manage', 'ssh', 'ssh_copy', 'task', 'todo', 'web_fetch', 'web_search', 'write'];
     private const HOOK_EVENTS = ['PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'Stop', 'SubagentStop'];
     private const CHECK_KEYS = ['name', 'match', 'command', 'kind', 'timeout'];
     public const SEARCH_BACKENDS = ['none', 'searxng', 'brave', 'tavily', 'exa', 'perplexity', 'ollama', 'firecrawl'];
@@ -66,6 +66,8 @@ final readonly class Config
         private array $checks = [],
         private string $mcpToolSearch = 'auto',
         private array $pricing = [],
+        private bool $memoryEnabled = true,
+        private string $memoryAutonomy = 'ask',
         private ?array $oracle = null,
     ) {
     }
@@ -163,6 +165,16 @@ final readonly class Config
     public function skillsAutonomy(): string
     {
         return $this->skillsAutonomy;
+    }
+
+    public function memoryEnabled(): bool
+    {
+        return $this->memoryEnabled;
+    }
+
+    public function memoryAutonomy(): string
+    {
+        return $this->memoryAutonomy;
     }
 
     public function uiTheme(): string
@@ -302,6 +314,7 @@ final readonly class Config
         }
 
         $skills = self::skillsSection($global['skills'] ?? null);
+        $memory = self::memorySection($global['memory'] ?? null);
         $appearance = self::appearanceSection($global['ui'] ?? null);
         $context = self::contextSection($global['context'] ?? null);
         $mode = self::permissions($global['permissions'] ?? null);
@@ -352,6 +365,8 @@ final readonly class Config
             checks: self::checksSection($global['checks'] ?? null),
             mcpToolSearch: self::mcpOptions($global['mcp'] ?? null),
             pricing: self::pricingSection($global['pricing'] ?? null),
+            memoryEnabled: $memory['enabled'],
+            memoryAutonomy: $memory['autonomy'],
             oracle: self::oracleSection($global['oracle'] ?? null, $profiles),
         );
     }
@@ -921,6 +936,17 @@ final readonly class Config
             'enabled' => self::flag($skills['enabled'] ?? true, 'skills.enabled'),
             'index' => self::choice($skills['index'] ?? 'on', 'skills.index', ['on', 'off']),
             'autonomy' => self::choice($skills['autonomy'] ?? 'ask', 'skills.autonomy', ['auto', 'ask']),
+        ];
+    }
+
+    private static function memorySection(mixed $raw): array
+    {
+        $memory = self::block($raw, 'memory');
+        self::only($memory, 'memory', ['enabled', 'autonomy']);
+
+        return [
+            'enabled' => self::flag($memory['enabled'] ?? true, 'memory.enabled'),
+            'autonomy' => self::choice($memory['autonomy'] ?? 'ask', 'memory.autonomy', ['auto', 'ask']),
         ];
     }
 

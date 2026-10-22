@@ -31,10 +31,13 @@ final class ArgvRunner
         $program = self::program($argv[0], $cwd);
         $timeout = ProcessRunner::timeoutProgram();
         $command = Launch::command([$program, ...array_slice($argv, 1)], $seconds + 1, 'KILL', 2);
+        $mark = ProcessTree::mark();
+        $reaped = $timeout === null && Launch::reaper() !== null;
 
         $pipes = [];
         $started = microtime(true);
-        $process = @proc_open($command, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $cwd, self::environment());
+        $process = @proc_open($command, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']] + ($reaped ? [Launch::STATUS => ['pipe', 'w']] : []) + ProcessTree::holder($mark), $pipes, $cwd, self::environment($mark));
+        ProcessTree::release($mark);
         if (!is_resource($process)) {
             throw new PhycodeException("cannot start {$argv[0]}");
         }
@@ -102,7 +105,7 @@ final class ArgvRunner
                     $interrupted = 'timeout';
                 }
                 if ($interrupted !== null) {
-                    ProcessTree::signal($pid, self::KILL);
+                    ProcessTree::signal($pid, self::KILL, true, $mark, $reaped);
                     break;
                 }
             }
@@ -121,6 +124,10 @@ final class ArgvRunner
         $exitCode ??= $status['running'] ? -1 : $status['exitcode'];
         if ($grouped) {
             ProcessTree::signal($pid, self::KILL, false);
+        }
+        $reported = $reaped ? Launch::reported($pipes[Launch::STATUS]) : null;
+        if ($reported !== null) {
+            $exitCode = $reported;
         }
         proc_close($process);
 
@@ -157,13 +164,14 @@ final class ArgvRunner
         return mb_scrub($buffer[0] . $middle, 'UTF-8');
     }
 
-    private static function environment(): array
+    private static function environment(string $mark): array
     {
         $environment = [
             'PATH' => (string) (getenv('PATH') ?: '/usr/local/bin:/usr/bin:/bin'),
             'HOME' => (string) (getenv('HOME') ?: '/root'),
             ...Locale::variables(),
             'TERM' => 'dumb',
+            ProcessTree::MARK => $mark,
         ];
         $temporary = getenv('TMPDIR');
         if (is_string($temporary) && $temporary !== '') {

@@ -32,6 +32,75 @@ final class ProcessRunnerTest extends TestCase
         self::assertLessThan(8.0, microtime(true) - $started, 'the background sleep must not keep the pipes open for long');
     }
 
+    public function testATimeoutAlsoStopsWhatLeftTheSessionAndTheProcessTree(): void
+    {
+        $escape = '(' . escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg('posix_setsid(); passthru("sleep 95.5");') . ' &); sleep 30';
+
+        $result = (new ProcessRunner())->run(['bash', '-c', $escape], sys_get_temp_dir(), 2, 4096);
+
+        self::assertSame('timeout', $result->interrupted);
+        self::assertTrue($this->eventually(static fn (): bool => !Kit::sleeping('95.5')), 'the sleep in its own session is stopped with the command');
+    }
+
+    public function testATimeoutAlsoStopsWhatLeftTheSessionAndClearedItsEnvironment(): void
+    {
+        $escape = '(' . escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg('posix_setsid(); passthru("env -i /bin/sleep 96.25");') . ' &); sleep 30';
+
+        $result = (new ProcessRunner())->run(['bash', '-c', $escape], sys_get_temp_dir(), 2, 4096);
+
+        self::assertSame('timeout', $result->interrupted);
+        self::assertTrue($this->eventually(static fn (): bool => !Kit::sleeping('96.25')), 'the sleep without the mark in its environment is stopped too');
+    }
+
+    public function testADaemonInItsOwnSessionOutlivesACommandThatEndsByItselfAndTheExitCodeIsKept(): void
+    {
+        $daemon = '(' . escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg('posix_setsid(); passthru("sleep 93.5");') . ' >/dev/null 2>&1 &); sleep 1; exit 3';
+        $started = microtime(true);
+
+        $result = (new ProcessRunner())->run(['bash', '-c', $daemon], sys_get_temp_dir(), 20, 4096);
+
+        try {
+            self::assertSame(3, $result->exitCode);
+            self::assertNull($result->interrupted);
+            self::assertLessThan(8.0, microtime(true) - $started, 'the command does not wait for the daemon');
+            self::assertTrue(Kit::sleeping('93.5'), 'the daemon goes on, like a server that the command started');
+        } finally {
+            $lines = [];
+            exec('ps -ax -o pid= -o command=', $lines);
+            foreach (preg_grep('/sleep 93\.5/', $lines) ?: [] as $line) {
+                posix_kill((int) $line, 9);
+            }
+        }
+    }
+
+    public function testADoubleForkIsStoppedWithoutAGnuTimeoutToo(): void
+    {
+        $path = getenv('PATH');
+        $bin = Kit::folder('no-timeout-bin');
+        foreach (['bash', 'sleep', 'ps'] as $program) {
+            symlink((string) ProcessRunner::which($program), $bin . '/' . $program);
+        }
+        putenv('PATH=' . $bin);
+        try {
+            self::assertNull(ProcessRunner::timeoutProgram());
+            $result = (new ProcessRunner())->run(['bash', '-c', '(sleep 96.5 &); echo started'], sys_get_temp_dir(), 20, 4096);
+        } finally {
+            putenv('PATH=' . $path);
+        }
+
+        self::assertSame("started\n", $result->stdout);
+        self::assertTrue($this->eventually(static fn (): bool => !Kit::sleeping('96.5')), 'the orphan is in the group of the command, which is stopped when it ends');
+    }
+
+    private function eventually(callable $check): bool
+    {
+        for ($attempt = 0; $attempt < 100 && !$check(); $attempt++) {
+            usleep(50000);
+        }
+
+        return $check();
+    }
+
     public function testLongOutputKeepsTheHeadAndTheTail(): void
     {
         $result = (new ProcessRunner())->run(['bash', '-c', 'head -c 20000 /dev/zero | tr "\0" "a"; echo END'], sys_get_temp_dir(), 5, 1000);

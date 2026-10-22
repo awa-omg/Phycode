@@ -703,9 +703,9 @@ final class Application
         }
         $write('[--] extension pcntl          ' . (extension_loaded('pcntl') ? 'available (Ctrl+C cancels turns)' : 'missing (Ctrl+C ends the process)') . "\n");
         $write(sprintf("[%s] %-22s %s\n", ProcessRunner::timeoutProgram() !== null ? 'ok' : '--', 'timeout', ProcessRunner::timeoutProgram() ?? match (PHP_OS_FAMILY) {
-            'BSD' => 'not used: it waits for every process a command leaves behind, so phycode enforces the time limits itself',
-            'Darwin' => 'not found (brew install coreutils provides gtimeout); phycode enforces the time limits itself',
-            default => 'not found; phycode enforces the time limits itself',
+            'BSD' => 'the base timeout holds each command as a reaper, and a watcher ends it when phycode ends',
+            'Darwin' => 'not used: a watcher in the wrapper keeps the time limit and ends each command when phycode ends',
+            default => 'timeout or setpriv --pdeathsig not found; a watcher in the wrapper keeps the time limit and ends each command when phycode ends',
         }));
         foreach (['bash', 'git', 'python3', 'node', 'rg', 'podman', 'docker', ...(PHP_OS_FAMILY === 'Linux' ? ['bwrap', 'socat'] : [])] as $binary) {
             $found = ProcessRunner::which($binary);

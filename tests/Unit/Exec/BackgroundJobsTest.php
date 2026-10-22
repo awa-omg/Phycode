@@ -84,6 +84,18 @@ final class BackgroundJobsTest extends TestCase
         self::assertStringContainsString('stopped: test after', $job->state());
     }
 
+    public function testStoppingAJobEndsWhatLeftTheSessionToo(): void
+    {
+        $jobs = new BackgroundJobs($this->logs);
+        $escape = '(' . escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg('posix_setsid(); passthru("sleep 97.5");') . ' &); sleep 30';
+        $job = $jobs->start(new ProcessRunner(), ['bash', '-c', $escape], $this->root, 'demo');
+        self::assertTrue(self::waitUntil(static fn (): bool => Kit::sleeping('97.5')));
+
+        $job->stop('test');
+
+        self::assertTrue(self::waitUntil(static fn (): bool => !Kit::sleeping('97.5')), 'the sleep in its own session is gone too');
+    }
+
     public function testAJobStopsWhenItsLifetimeIsOver(): void
     {
         $jobs = new BackgroundJobs($this->logs, 8, 1);

@@ -210,6 +210,25 @@ final class DeployCliTest extends TestCase
         self::assertStringNotContainsString('tok_abcdef', $out);
     }
 
+    public function testAFailedApplyAsksWhetherToRollBackAndRollsBackOnAYes(): void
+    {
+        $this->cli = FakeCli::install(['one' => 'echo first', 'two' => 'exit 3', 'back' => 'echo rolled']);
+        self::assertSame(0, $this->cli(['add', 'box', 'custom', '--env', 'staging', '--set', 'commands={"apply":[["one"],["two"]],"rollback":[["back"]]}'])[0]);
+
+        [$code, $out] = $this->cli(['box', 'apply', '--yes'], "n\n", true);
+        self::assertSame(1, $code);
+        self::assertStringContainsString('Roll back box now? [y/N]', $out);
+        self::assertSame([], $this->cli->calls('back'));
+
+        [$code, $out] = $this->cli(['box', 'apply', '--yes'], "y\n", true);
+        self::assertSame(1, $code, 'the apply still failed');
+        self::assertStringContainsString('deploy box: rollback ok', $out);
+        self::assertCount(1, $this->cli->calls('back'));
+
+        [, $out] = $this->cli(['box', 'apply', '--yes'], '', false);
+        self::assertStringNotContainsString('Roll back box now?', $out, 'without a terminal nobody is asked');
+    }
+
     public function testAnActionWithoutATerminalNeedsYesAndReadingNeedsNoQuestion(): void
     {
         $this->cli = FakeCli::install(['vercel' => 'echo listed'], ['VERCEL_TOKEN']);

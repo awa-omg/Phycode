@@ -281,6 +281,16 @@ final class DeployCli
             fwrite($out, "  {$step}\n");
         });
         fwrite($out, $result->report(!in_array($action, Deployments::MUTATING, true), 12) . "\n");
+        if ($interactive && $deployments->offersRollBack($result)) {
+            fwrite($out, "Roll back {$target} now? [y/N] ");
+            $answer = strtolower(trim((string) fgets($in)));
+            if ($answer === 'y' || $answer === 'yes') {
+                $back = $deployments->run($target, 'rollback', null, $lines, new Cancellation(), 16384, static function (string $step) use ($out): void {
+                    fwrite($out, "  {$step}\n");
+                });
+                fwrite($out, $back->report(false, 12) . "\n");
+            }
+        }
 
         return $result->ok ? 0 : 1;
     }

@@ -100,6 +100,11 @@ final class DeployTool extends BaseTool
             return ToolResult::fail($error->getMessage());
         }
         $report = $result->report(false);
+        if ($context->ui->interactive() && $this->deployments->offersRollBack($result)
+            && $context->ui->ask("deploy {$name} failed after something was changed. Roll back now?", ['no', 'yes, roll back'], false) === 'yes, roll back') {
+            $back = $this->deployments->run($name, 'rollback', null, 100, $context->cancel, max(2048, intdiv($context->limits->toolOutputBytes, 2)), static fn (string $step) => $context->ui->notice('info', "deploy {$name}: {$step}"));
+            $report .= "\n\nthe person chose to roll back:\n" . $back->report(false);
+        }
 
         return $result->ok ? ToolResult::ok($report, ['url' => $result->url]) : ToolResult::fail($report);
     }

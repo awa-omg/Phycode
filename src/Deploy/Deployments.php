@@ -191,6 +191,9 @@ final class Deployments
                 $failed = 'the deploy ran but the health check failed';
             }
         }
+        if ($failed !== null && $action === 'apply' && in_array('ok', array_column($results, 'status'), true) && $this->canRollBack($name)) {
+            $failed .= ". Something was already changed. To undo it, roll back: phycode deploy {$name} rollback";
+        }
         $seconds = microtime(true) - $started;
         $result = new DeployResult($failed === null, $name, $action, $results, $url, $health, $plan->notes, $failed, $seconds);
 
@@ -199,6 +202,20 @@ final class Deployments
         }
 
         return $result;
+    }
+
+    public function canRollBack(string $name): bool
+    {
+        try {
+            return $this->plan($name, 'rollback')->steps !== [];
+        } catch (DeployUnsupported) {
+            return false;
+        }
+    }
+
+    public function offersRollBack(DeployResult $result): bool
+    {
+        return !$result->ok && $result->action === 'apply' && in_array('ok', array_column($result->steps, 'status'), true) && $this->canRollBack($result->target);
     }
 
     public function history(?string $name = null, int $limit = 20): array

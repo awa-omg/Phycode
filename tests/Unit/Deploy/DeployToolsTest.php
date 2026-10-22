@@ -204,6 +204,27 @@ final class DeployToolsTest extends TestCase
         self::assertStringContainsString('Error: build failed', $result->content);
     }
 
+    public function testAfterAFailedApplyThePersonIsAskedWhetherToRollBack(): void
+    {
+        $this->cli->end();
+        $this->cli = FakeCli::install(['one' => 'echo first', 'two' => 'exit 3', 'back' => 'echo rolled']);
+        $deployments = new Deployments(['box' => DeployTarget::fromArray('box', ['kind' => 'custom', 'commands' => ['apply' => [['one'], ['two']], 'rollback' => [['back']]]])], $this->vault, new ProcessRunner(), new SshHosts([], new ProcessRunner()), $this->root, null, 1, 0);
+        $deploy = new DeployTool($deployments);
+
+        $declined = new RecordingUi();
+        $declined->answers = ['no'];
+        $kept = $deploy->execute(['target' => 'box', 'action' => 'apply'], $this->context($declined));
+        $accepted = new RecordingUi();
+        $accepted->answers = ['yes, roll back'];
+        $rolled = $deploy->execute(['target' => 'box', 'action' => 'apply'], $this->context($accepted));
+
+        self::assertFalse($kept->ok);
+        self::assertStringNotContainsString('chose to roll back', $kept->content);
+        self::assertFalse($rolled->ok);
+        self::assertStringContainsString("the person chose to roll back:\ndeploy box: rollback ok", $rolled->content);
+        self::assertCount(1, $this->cli->calls('back'), 'only the person who said yes rolled back');
+    }
+
     public function testThePlanAsksForNothingAndShowsWhatIsMissing(): void
     {
         $info = new DeployInfoTool($this->deployments);

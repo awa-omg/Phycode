@@ -152,6 +152,27 @@ final class DeploymentsTest extends TestCase
         self::assertStringStartsWith('deploy box: apply FAILED', $result->report(false));
     }
 
+    public function testAnApplyThatFailsAfterChangingSomethingOffersTheRollback(): void
+    {
+        $this->cli = FakeCli::install(['one' => 'echo first', 'two' => 'exit 3', 'back' => 'echo rolled']);
+        $deployments = $this->deployments([
+            'box' => ['kind' => 'custom', 'commands' => ['apply' => [['one'], ['two']], 'rollback' => [['back']]]],
+            'first' => ['kind' => 'custom', 'commands' => ['apply' => [['two'], ['one']], 'rollback' => [['back']]]],
+            'none' => ['kind' => 'custom', 'commands' => ['apply' => [['one'], ['two']]]],
+        ]);
+
+        $box = $this->execute($deployments, 'box', 'apply');
+        $first = $this->execute($deployments, 'first', 'apply');
+        $none = $this->execute($deployments, 'none', 'apply');
+
+        self::assertTrue($deployments->offersRollBack($box));
+        self::assertStringContainsString('phycode deploy box rollback', (string) $box->error);
+        self::assertFalse($deployments->offersRollBack($first), 'nothing ran, so there is nothing to undo');
+        self::assertFalse($deployments->offersRollBack($none), 'the target has no rollback');
+        self::assertStringNotContainsString('rollback', (string) $none->error);
+        self::assertSame([], $this->cli->calls('back'), 'the rollback is offered, never run on its own');
+    }
+
     public function testAStepOnTheHardLineStopsTheWholeDeployBeforeAnyStepRuns(): void
     {
         $this->cli = FakeCli::install(['one' => 'echo first']);
@@ -207,7 +228,7 @@ final class DeploymentsTest extends TestCase
         $bad = $this->deployments(['web' => ['kind' => 'vercel', 'health_url' => 'https://x.example/health']], static fn (string $url): array => [null, 'connection refused'], 2);
         $result = $this->execute($bad, 'web', 'apply');
         self::assertFalse($result->ok);
-        self::assertSame('the deploy ran but the health check failed', $result->error);
+        self::assertSame('the deploy ran but the health check failed. Something was already changed. To undo it, roll back: phycode deploy web rollback', $result->error);
         self::assertSame('connection refused from https://x.example/health after 2 tries', $result->health);
 
         $status = $this->execute($bad, 'web', 'status');

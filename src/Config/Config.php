@@ -8,6 +8,7 @@ use Phycode\Agent\Checks;
 use Phycode\Agent\Hooks;
 use Phycode\Deploy\DeployTarget;
 use Phycode\Exec\DomainAllowlist;
+use Phycode\Lsp\LspServerSpec;
 use Phycode\Mcp\McpHttpClient;
 use Phycode\Ssh\SshHost;
 use Phycode\Support\Json;
@@ -24,7 +25,7 @@ final readonly class Config
     public const DIFF_VIEWS = ['auto', 'split', 'unified'];
     public const CONTEXT_MIN_TOKENS = 512;
     public const CONTEXT_MAX_TOKENS = 1000000;
-    public const BUILTIN_TOOLS = ['ask_user', 'bash', 'delete', 'deploy', 'deploy_info', 'edit', 'gh_read', 'gh_write', 'git_read', 'git_remote', 'git_write', 'glob', 'grep', 'list', 'memory', 'move', 'read', 'repo_map', 'run_code', 'session_search', 'skill', 'skill_manage', 'ssh', 'ssh_copy', 'task', 'todo', 'web_fetch', 'web_search', 'write'];
+    public const BUILTIN_TOOLS = ['ask_user', 'bash', 'delete', 'deploy', 'deploy_info', 'edit', 'gh_read', 'gh_write', 'git_read', 'git_remote', 'git_write', 'glob', 'grep', 'list', 'lsp', 'memory', 'move', 'read', 'repo_map', 'run_code', 'session_search', 'skill', 'skill_manage', 'ssh', 'ssh_copy', 'task', 'todo', 'web_fetch', 'web_search', 'write'];
     private const HOOK_EVENTS = ['PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'Stop', 'SubagentStop'];
     private const CHECK_KEYS = ['name', 'match', 'command', 'kind', 'timeout'];
     public const SEARCH_BACKENDS = ['none', 'searxng', 'brave', 'tavily', 'exa', 'perplexity', 'ollama', 'firecrawl'];
@@ -69,6 +70,7 @@ final readonly class Config
         private bool $memoryEnabled = true,
         private string $memoryAutonomy = 'ask',
         private ?array $oracle = null,
+        private array $lspServers = [],
     ) {
     }
 
@@ -125,6 +127,11 @@ final readonly class Config
     public function oracle(): ?array
     {
         return $this->oracle;
+    }
+
+    public function lspServers(): array
+    {
+        return $this->lspServers;
     }
 
     public function mcpToolSearch(): string
@@ -368,6 +375,7 @@ final readonly class Config
             memoryEnabled: $memory['enabled'],
             memoryAutonomy: $memory['autonomy'],
             oracle: self::oracleSection($global['oracle'] ?? null, $profiles),
+            lspServers: self::lspSection($global['lsp'] ?? null),
         );
     }
 
@@ -786,6 +794,16 @@ final readonly class Config
             'max_calls' => self::integer($oracle['max_calls'] ?? 10, 'oracle.max_calls', 1, 100),
             'approval' => self::choice($oracle['approval'] ?? 'ask', 'oracle.approval', ['ask', 'allow']),
         ];
+    }
+
+    private static function lspSection(mixed $raw): array
+    {
+        $servers = [];
+        foreach (self::block($raw, 'lsp') as $name => $entry) {
+            $servers[(string) $name] = LspServerSpec::fromArray((string) $name, self::block($entry, "lsp.{$name}"));
+        }
+
+        return $servers;
     }
 
     private static function mcpOptions(mixed $raw): string

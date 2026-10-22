@@ -28,6 +28,7 @@ use Phycode\Llm\ClientProvider;
 use Phycode\Llm\ModelCatalog;
 use Phycode\Llm\Pricing;
 use Phycode\Llm\UsageMeter;
+use Phycode\Lsp\LspServers;
 use Phycode\Mcp\McpServers;
 use Phycode\Memory\MemoryStore;
 use Phycode\Review\ReviewCommands;
@@ -62,6 +63,7 @@ use Phycode\Tools\GlobTool;
 use Phycode\Tools\GrepTool;
 use Phycode\Tools\JobTool;
 use Phycode\Tools\ListTool;
+use Phycode\Tools\LspTool;
 use Phycode\Tools\MemorySaveTool;
 use Phycode\Tools\MemoryTool;
 use Phycode\Tools\MoveTool;
@@ -105,6 +107,7 @@ final class Kernel
     public readonly MemoryStore $memory;
     public readonly Deployments $deployments;
     public readonly ?McpServers $mcp;
+    public readonly LspServers $lsp;
     public readonly AgentRunner $runner;
     public readonly PromptBuilder $prompts;
     public readonly SkillIndex $skillIndex;
@@ -157,6 +160,7 @@ final class Kernel
         $this->jobs = new BackgroundJobs($cacheDir . '/jobs', $this->config->limits->backgroundJobs, $this->config->limits->backgroundLifetime);
         $this->ssh = new SshHosts($this->config->sshHosts(), $this->processes);
         $this->todos = new TodoList();
+        $this->lsp = new LspServers($this->config->lspServers());
         $this->memory = new MemoryStore($root, $configDir);
         $this->deployments = new Deployments($this->config->deployTargets(), new Vault($configDir), $this->processes, $this->ssh, $root);
         $remote = [
@@ -182,6 +186,7 @@ final class Kernel
             new GhWriteTool($root),
             new TaskTool($this->agents, $this->config->subagentsEnabled),
             new TodoTool($this->todos),
+            ...($this->lsp->isEmpty() ? [] : [new LspTool($this->lsp)]),
             new SessionSearchTool(new SessionSearch(new SessionStore($root))),
             new MemoryTool($this->memory, $this->config->memoryEnabled()),
             new MemorySaveTool($this->memory, $this->config->memoryEnabled(), $this->config->memoryAutonomy()),

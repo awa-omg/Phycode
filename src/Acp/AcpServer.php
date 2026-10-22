@@ -49,6 +49,7 @@ final class AcpServer
             Cancellation::setPoll(null);
             foreach ($this->sessions as $session) {
                 $session->kernel->mcp?->close();
+                $session->kernel->lsp->close();
             }
         }
     }

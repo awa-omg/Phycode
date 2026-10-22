@@ -22,12 +22,29 @@ final class HardLine
     private static array $links = [];
     private static ?array $mounted = null;
     private static float $mountedAt = 0.0;
+    private static bool $remote = false;
 
-    public static function reason(string $summary, ?string $cwd = null): ?string
+    public const FACTS_SCRIPT = <<<'SH'
+        echo "@HOME $HOME"
+        echo "@PATH $PATH"
+        echo "@OS $(uname -s)"
+        real() { [ -d "$1" ] && (cd -P "$1" 2>/dev/null && printf '@REAL %s\t%s\n' "$1" "$(pwd -P)"); return 0; }
+        while IFS= read -r line; do echo "@PASSWD $line"; done < /etc/passwd
+        for file in /etc/login.defs /usr/etc/login.defs; do [ -r "$file" ] && { sed -n 's/^[[:space:]]*\(UID_M[AI][NX]\)[[:space:]][[:space:]]*\([0-9][0-9]*\).*/@DEFS \1 \2/p' "$file"; break; }; done
+        sed -n 's/^HOME=/@USERADD /p' /etc/default/useradd 2>/dev/null
+        if [ -r /proc/self/mounts ]; then while read -r device point rest; do echo "@MOUNT $point"; done < /proc/self/mounts; else /sbin/mount 2>/dev/null | sed 's/^/@MOUNTLINE /'; fi
+        for entry in /* /.[!.]*; do if [ -e "$entry" ] || [ -L "$entry" ]; then echo "@TOP $entry"; real "$entry"; fi; done
+        real "$HOME"
+        cut -d: -f6 /etc/passwd | while IFS= read -r home; do real "$home"; real "$(dirname "$home")"; done
+        echo "@END"
+        SH;
+
+    public static function reason(string $summary, ?string $cwd = null, ?array $facts = null): ?string
     {
         $at = strpos($summary, ': ');
         self::$start = $cwd === null || $cwd === '' ? null : $cwd;
-        self::$facts = null;
+        self::$facts = $facts;
+        self::$remote = $facts !== null;
         foreach (self::readings($at === false ? $summary : substr($summary, $at + 2)) as $reading) {
             $reason = self::reasonIn($reading);
             if ($reason !== null) {
@@ -88,6 +105,12 @@ final class HardLine
                     return 'a command nested more than four shells deep, which the hard line cannot read';
                 }
                 $reason = self::reasonOf(preg_split('/\s+/', trim($view)) ?: [], $named);
+                if ($reason !== null) {
+                    return $reason;
+                }
+            }
+            foreach (ShellCommand::wordViews($segment) as $words) {
+                $reason = self::reasonOf($words, $named);
                 if ($reason !== null) {
                     return $reason;
                 }
@@ -286,11 +309,11 @@ final class HardLine
             return false;
         }
         $candidates = [$path];
-        if (preg_match('/[*?\[]/', $path) === 1) {
+        if (!self::$remote && preg_match('/[*?\[]/', $path) === 1) {
             array_push($candidates, ...array_slice(glob($path, GLOB_NOSORT) ?: [], 0, self::MAX_MATCHES));
         }
         foreach ($candidates as $candidate) {
-            $real = realpath($candidate);
+            $real = self::$remote ? false : realpath($candidate);
             if (self::guarded(self::normal($candidate)) || ($real !== false && self::guarded($real))) {
                 return true;
             }
@@ -343,9 +366,10 @@ final class HardLine
             return $home . substr($bare, strlen($match[0]));
         }
         if (preg_match('~^\~([A-Za-z0-9._-]+)(?=/|$)~', $bare, $match) === 1) {
-            $user = posix_getpwnam($match[1]);
+            $user = self::$remote ? false : posix_getpwnam($match[1]);
+            $dir = self::facts()['users'][$match[1]] ?? ($user === false ? dirname($home) . '/' . $match[1] : $user['dir']);
 
-            return ($user === false ? dirname($home) . '/' . $match[1] : $user['dir']) . substr($bare, strlen($match[0]));
+            return $dir . substr($bare, strlen($match[0]));
         }
         if (str_starts_with($bare, '/')) {
             return $bare;
@@ -382,29 +406,6 @@ final class HardLine
             $user = posix_getpwuid(posix_geteuid());
             $home = $user === false ? '/' : $user['dir'];
         }
-        $home = self::normal($home);
-        $defs = (string) (@file_get_contents('/etc/login.defs') ?: @file_get_contents('/usr/etc/login.defs'));
-        $low = preg_match('/^\s*UID_MIN\s+(\d+)/m', $defs, $match) === 1 ? (int) $match[1] : (PHP_OS_FAMILY === 'Darwin' ? 500 : 1000);
-        $high = preg_match('/^\s*UID_MAX\s+(\d+)/m', $defs, $match) === 1 ? (int) $match[1] : 60000;
-        $base = preg_match('/^\s*HOME=(\/\S*)/m', (string) @file_get_contents('/etc/default/useradd'), $match) === 1 ? $match[1] : '/home';
-        $held = [$home];
-        $homes = [$home];
-        $roots = [dirname($home), self::normal($base)];
-        foreach (@file('/etc/passwd', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
-            $fields = explode(':', $line);
-            if (count($fields) < 7 || !str_starts_with($fields[5], '/')) {
-                continue;
-            }
-            $held[] = self::normal($fields[5]);
-            if ((int) $fields[2] >= $low && (int) $fields[2] <= $high) {
-                $roots[] = dirname(self::normal($fields[5]));
-                $homes[] = self::normal($fields[5]);
-            }
-        }
-        array_push($held, ...self::mountPoints());
-        if (PHP_OS_FAMILY === 'Darwin') {
-            $held[] = $home . '/Library';
-        }
         $tops = [];
         foreach (@scandir('/') ?: [] as $entry) {
             $real = realpath('/' . $entry);
@@ -412,28 +413,125 @@ final class HardLine
                 $tops[] = $real;
             }
         }
-        foreach (explode(':', (string) getenv('PATH')) as $entry) {
-            if (str_starts_with($entry, '/') && array_filter($homes, static fn (string $dir): bool => self::normal($entry) === $dir || str_starts_with(self::normal($entry), $dir . '/')) === []) {
-                $tops[] = $folder = self::normal($entry);
-                if (substr_count(dirname($folder), '/') === 1) {
-                    $roots[] = dirname($folder);
-                }
+
+        return self::$facts = self::build(
+            $home,
+            @file('/etc/passwd', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [],
+            (string) (@file_get_contents('/etc/login.defs') ?: @file_get_contents('/usr/etc/login.defs')),
+            (string) @file_get_contents('/etc/default/useradd'),
+            self::mountPoints(),
+            $tops,
+            (string) getenv('PATH'),
+            PHP_OS_FAMILY === 'Darwin',
+            static fn (string $path): string|false => realpath($path),
+        );
+    }
+
+    public static function remoteFacts(string $output): ?array
+    {
+        $lines = explode("\n", $output);
+        if (!in_array('@END', array_map('trim', $lines), true)) {
+            return null;
+        }
+        $home = '';
+        $path = '';
+        $darwin = false;
+        $passwd = [];
+        $defs = '';
+        $useradd = '';
+        $mounts = [];
+        $mountLines = [];
+        $tops = [];
+        $real = [];
+        foreach ($lines as $line) {
+            [$tag, $value] = array_pad(explode(' ', rtrim($line, "\r"), 2), 2, '');
+            match ($tag) {
+                '@HOME' => $home = $value,
+                '@PATH' => $path = $value,
+                '@OS' => $darwin = $value === 'Darwin',
+                '@PASSWD' => $passwd[] = $value,
+                '@DEFS' => $defs .= $value . "\n",
+                '@USERADD' => $useradd .= 'HOME=' . $value . "\n",
+                '@MOUNT' => $mounts[] = self::normal(self::unescape($value)),
+                '@MOUNTLINE' => $mountLines[] = $value,
+                '@TOP' => $tops[] = $value,
+                '@REAL' => $real += str_contains($value, "\t") ? [explode("\t", $value, 2)[0] => explode("\t", $value, 2)[1]] : [],
+                default => null,
+            };
+        }
+        if (!str_starts_with($home, '/')) {
+            return null;
+        }
+        $find = static fn (string $folder): string|false => $real[$folder] ?? $real[rtrim($folder, '/')] ?? false;
+
+        return self::build(
+            $home,
+            $passwd,
+            $defs,
+            $useradd,
+            [...$mounts, ...self::mountsFrom($mountLines)],
+            array_map(static fn (string $top): string => $find($top) ?: self::normal($top), $tops),
+            $path,
+            $darwin,
+            $find,
+        );
+    }
+
+    private static function build(string $home, array $passwd, string $defs, string $useradd, array $mounts, array $tops, string $path, bool $darwin, \Closure $real): array
+    {
+        $home = self::normal($home);
+        $low = preg_match('/^\s*UID_MIN\s+(\d+)/m', $defs, $match) === 1 ? (int) $match[1] : ($darwin ? 500 : 1000);
+        $high = preg_match('/^\s*UID_MAX\s+(\d+)/m', $defs, $match) === 1 ? (int) $match[1] : 60000;
+        $base = preg_match('/^\s*HOME=(\/\S*)/m', $useradd, $match) === 1 ? $match[1] : '/home';
+        $held = [$home];
+        $homes = [$home];
+        $roots = [dirname($home), self::normal($base)];
+        $users = [];
+        foreach ($passwd as $line) {
+            $fields = explode(':', $line);
+            if (count($fields) < 7 || !str_starts_with($fields[5], '/')) {
+                continue;
+            }
+            $held[] = self::normal($fields[5]);
+            $users[$fields[0]] = self::normal($fields[5]);
+            if ((int) $fields[2] >= $low && (int) $fields[2] <= $high) {
+                $roots[] = dirname(self::normal($fields[5]));
+                $homes[] = self::normal($fields[5]);
+            }
+        }
+        array_push($held, ...$mounts);
+        if ($darwin) {
+            $held[] = $home . '/Library';
+        }
+        foreach (explode(':', $path) as $entry) {
+            if (!str_starts_with($entry, '/')) {
+                continue;
+            }
+            $tops[] = $folder = self::normal($entry);
+            if (substr_count(dirname($folder), '/') === 1 && array_filter($homes, static fn (string $dir): bool => $folder === $dir || str_starts_with($folder, $dir . '/')) === []) {
+                $roots[] = dirname($folder);
             }
         }
 
-        return self::$facts = [
+        return [
             'home' => $home,
-            'held' => array_values(array_diff(self::withReal($held), ['/'])),
-            'roots' => self::withReal($roots),
+            'users' => $users,
+            'held' => array_values(array_diff(self::withReal($held, $real), ['/'])),
+            'roots' => self::withReal($roots, $real),
             'tops' => array_values(array_unique($tops)),
         ];
     }
 
-    private static function withReal(array $paths): array
+    private static function withReal(array $paths, \Closure $real): array
     {
-        $real = array_filter(array_map(static fn (string $path): string|false => realpath($path), $paths));
+        $found = array_filter(array_map($real, $paths));
 
-        return array_values(array_unique([...$paths, ...$real]));
+        return array_values(array_unique([...$paths, ...$found]));
+    }
+
+    private static function unescape(string $point): string
+    {
+        return (string) preg_replace_callback('/\\\\([0-7]{3})/', static fn (array $code): string => chr((int) octdec($code[1])), $point);
     }
 
     private static function mountPoints(): array
@@ -442,7 +540,7 @@ final class HardLine
             $points = [];
             foreach (@file('/proc/self/mounts', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
                 $point = explode(' ', $line)[1] ?? '';
-                $points[] = self::normal((string) preg_replace_callback('/\\\\([0-7]{3})/', static fn (array $code): string => chr((int) octdec($code[1])), $point));
+                $points[] = self::normal(self::unescape($point));
             }
 
             return $points;

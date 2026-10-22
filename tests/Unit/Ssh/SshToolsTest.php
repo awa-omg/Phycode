@@ -8,6 +8,7 @@ use Phycode\Agent\AgentRunner;
 use Phycode\Agent\Conversation;
 use Phycode\Agent\RunSetup;
 use Phycode\Exec\BackgroundJobs;
+use Phycode\Security\Permissions;
 use Phycode\Support\PhycodeException;
 use Phycode\Tests\Support\Kit;
 use Phycode\Tests\Support\RecordingUi;
@@ -49,6 +50,22 @@ final class SshToolsTest extends TestCase
         self::assertArrayHasKey('background', $parameters['properties']);
         self::assertStringContainsString('Hosts: prod (starts in /srv/app)', $tool->description());
         self::assertSame('ssh prod: ls -la', $tool->summarize(['host' => 'prod', 'command' => 'ls -la']));
+    }
+
+    public function testTheHardLineReadsTheFactsOfTheHostAndItsFolder(): void
+    {
+        $hosts = $this->server()->hosts(['cwd' => '/usr/lib']);
+        $tool = new SshTool($hosts);
+        $permissions = new Permissions(new RecordingUi());
+
+        $facts = $tool->hardLineFacts(['host' => 'test']);
+
+        self::assertNotNull($facts);
+        self::assertSame(posix_getpwuid(posix_geteuid())['dir'], $facts['home']);
+        self::assertSame('/usr/lib', $facts['cwd'], 'the folder of the host');
+        self::assertSame($facts['home'] . '/app', $tool->hardLineFacts(['host' => 'test', 'cwd' => '~/app'])['cwd']);
+        self::assertNotNull($permissions->check($tool, $this->context, 'ssh test: rm -rf ..', ['host' => 'test', 'command' => 'rm -rf ..']), '.. of /usr/lib on the host is /usr');
+        self::assertNull($permissions->check($tool, $this->context, 'ssh test: rm -rf build', ['host' => 'test', 'command' => 'rm -rf build', 'cwd' => '~/app']));
     }
 
     public function testACommandRunsOnTheHostAndTheReportShowsItsOutput(): void

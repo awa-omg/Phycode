@@ -132,6 +132,9 @@ final class HardLineTest extends TestCase
             self::assertNull(HardLine::reason('bash: rm -rf /phycode-test-home/project', '/phycode-test-home/project'));
             self::assertNull(HardLine::reason('bash: rm -rf ~/project', '/phycode-test-home/project'));
             self::assertNotNull(HardLine::reason('bash: rm -rf /phycode-test-home', '/phycode-test-home/project'));
+            self::assertNotNull(HardLine::reason('bash: rm -rf ~/bin', '/phycode-test-home/project'), 'the PATH folder itself is guarded');
+            self::assertNotNull(HardLine::reason('bash: rm -rf /phycode-test-home/bin/', '/phycode-test-home/project'));
+            self::assertNull(HardLine::reason('bash: rm -rf ~/bin/project', '/phycode-test-home/project'), 'a folder inside it is not');
         } finally {
             putenv($home === false ? 'HOME' : 'HOME=' . $home);
             putenv($path === false ? 'PATH' : 'PATH=' . $path);

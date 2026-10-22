@@ -135,12 +135,21 @@ final class ShellCommand
 
     public static function views(string $segment, int $depth = 0): array
     {
-        $views = [$segment];
+        return array_values(array_unique([$segment, ...array_map(static fn (string|array $reading): string => is_array($reading) ? implode(' ', $reading) : $reading, self::readings($segment, $depth))]));
+    }
+
+    public static function wordViews(string $segment): array
+    {
+        return array_values(array_filter(self::readings($segment, 0), is_array(...)));
+    }
+
+    private static function readings(string $segment, int $depth): array
+    {
         $words = self::words($segment);
         if ($words === null || $words === []) {
-            return $views;
+            return [];
         }
-        $views[] = implode(' ', $words);
+        $readings = [$words];
         for ($guard = 0; $words !== [] && $guard < 16; $guard++) {
             $name = basename($words[0]);
             if (in_array($words[0], self::RESERVED, true) || preg_match('/^[A-Za-z_][A-Za-z0-9_]*\+?=/', $words[0]) === 1) {
@@ -151,24 +160,25 @@ final class ShellCommand
             } else {
                 break;
             }
-            $views[] = implode(' ', $words);
+            $readings[] = $words;
         }
         if ($words !== []) {
             if (str_contains($words[0], '/')) {
                 $words[0] = basename($words[0]);
-                $views[] = implode(' ', $words);
+                $readings[] = $words;
             }
             $inner = self::innerCommand($words);
             if ($inner !== null && $depth > 3) {
-                $views[] = self::TOO_DEEP;
+                $readings[] = self::TOO_DEEP;
             } elseif ($inner !== null) {
                 foreach (self::segments($inner) ?? [$inner] as $segment) {
-                    array_push($views, ...self::views($segment, $depth + 1));
+                    $readings[] = $segment;
+                    array_push($readings, ...self::readings($segment, $depth + 1));
                 }
             }
         }
 
-        return array_values(array_unique($views));
+        return $readings;
     }
 
     private static function skipOptions(array $words, array $wrapper): array

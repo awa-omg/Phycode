@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace Phycode\Ssh;
 
 use Phycode\Exec\ProcessRunner;
+use Phycode\Security\HardLine;
 use Phycode\Support\PhycodeException;
 
 final class SshHosts
 {
     private const MAX_FOLDER_BYTES = 60;
+    private const FACTS_SECONDS = 20;
+    private const FACTS_BYTES = 1048576;
 
     private array $runners = [];
+    private array $facts = [];
     private ?string $folder = null;
 
     public function __construct(
@@ -55,6 +59,34 @@ final class SshHosts
         $ssh = ProcessRunner::which('ssh') ?? throw new PhycodeException('the ssh client is not installed');
 
         return $this->runners[$name] = new SshRunner($host, $this->local, $this->folder(), null, $ssh);
+    }
+
+    public function hardLineFacts(string $name, ?string $directory): ?array
+    {
+        if (!$this->has($name)) {
+            return null;
+        }
+        if (!isset($this->facts[$name])) {
+            try {
+                $result = $this->runner($name)->run(['sh', '-c', HardLine::FACTS_SCRIPT], sys_get_temp_dir(), self::FACTS_SECONDS, self::FACTS_BYTES);
+            } catch (PhycodeException) {
+                return null;
+            }
+            $facts = $result->succeeded() ? HardLine::remoteFacts($result->stdout) : null;
+            if ($facts === null) {
+                return null;
+            }
+            $this->facts[$name] = $facts;
+        }
+        $home = $this->facts[$name]['home'];
+        $directory = $directory === null || $directory === '' ? ($this->host($name)->cwd ?? '~') : $directory;
+
+        return [...$this->facts[$name], 'cwd' => match (true) {
+            str_starts_with($directory, '/') => $directory,
+            $directory === '~' => $home,
+            str_starts_with($directory, '~/') => $home . substr($directory, 1),
+            default => $home . '/' . $directory,
+        }];
     }
 
     public function close(): void

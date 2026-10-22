@@ -84,6 +84,18 @@ final class McpTool extends BaseTool
         return ToolCategory::Exec;
     }
 
+    public function hardLineCommands(array $args): array
+    {
+        $texts = [];
+        array_walk_recursive($args, static function (mixed $value) use (&$texts): void {
+            if (is_string($value) && trim($value) !== '') {
+                $texts[] = $value;
+            }
+        });
+
+        return $texts;
+    }
+
     public function summarize(array $args): string
     {
         $parts = [];

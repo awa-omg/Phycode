@@ -62,6 +62,13 @@ final class SshTool extends BaseTool
         return 'ssh ' . $host . ': ' . (is_string($args['command'] ?? null) ? $args['command'] : '?');
     }
 
+    public function hardLineFacts(array $args): ?array
+    {
+        $name = $args['host'] ?? null;
+
+        return is_string($name) ? $this->hosts->hardLineFacts($name, is_string($args['cwd'] ?? null) ? $args['cwd'] : null) : null;
+    }
+
     public function forcesApproval(array $args): bool
     {
         $host = $args['host'] ?? null;

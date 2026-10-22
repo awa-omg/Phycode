@@ -49,4 +49,14 @@ abstract class BaseTool implements Tool
     {
         return false;
     }
+
+    public function hardLineCommands(array $args): array
+    {
+        return [];
+    }
+
+    public function hardLineFacts(array $args): ?array
+    {
+        return null;
+    }
 }

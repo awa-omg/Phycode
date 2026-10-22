@@ -31,4 +31,8 @@ interface Tool
     public function forcesApproval(array $args): bool;
 
     public function sandboxed(): bool;
+
+    public function hardLineCommands(array $args): array;
+
+    public function hardLineFacts(array $args): ?array;
 }

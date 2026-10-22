@@ -30,9 +30,13 @@ final class Permissions
             return "refused by the rule '{$deny}' in rules.deny";
         }
         if ($category === ToolCategory::Exec && !($tool->sandboxed() && $context->sandbox instanceof ContainerRunner)) {
-            $hard = HardLine::reason($summary, $context->workspace->root);
-            if ($hard !== null) {
-                return "refused: {$hard} is never run, in any mode and with any approval";
+            $facts = $tool->hardLineFacts($args);
+            $cwd = $facts === null ? $context->workspace->root : ($facts['cwd'] ?? null);
+            foreach ([$summary, ...array_map(static fn (string $command): string => "{$name}: {$command}", $tool->hardLineCommands($args))] as $command) {
+                $hard = HardLine::reason($command, $cwd, $facts);
+                if ($hard !== null) {
+                    return "refused: {$hard} is never run, in any mode and with any approval";
+                }
             }
         }
         if ($context->policy->denies($category)) {

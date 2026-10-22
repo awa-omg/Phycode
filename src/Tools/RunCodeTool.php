@@ -7,6 +7,7 @@ namespace Phycode\Tools;
 use Phycode\Agent\RunPolicy;
 use Phycode\Diff\TextDiff;
 use Phycode\Exec\ProcessRunner;
+use Phycode\Security\CodeCommands;
 use Phycode\Support\Files;
 use Phycode\Support\PhycodeException;
 
@@ -65,6 +66,11 @@ final class RunCodeTool extends BaseTool
     public function summarize(array $args): string
     {
         return 'run_code ' . (is_string($args['language'] ?? null) ? $args['language'] : '?');
+    }
+
+    public function hardLineCommands(array $args): array
+    {
+        return CodeCommands::of(is_string($args['language'] ?? null) ? $args['language'] : '', is_string($args['code'] ?? null) ? $args['code'] : '');
     }
 
     public function preview(array $args, ToolContext $context): ?array

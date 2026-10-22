@@ -7,6 +7,8 @@ namespace Phycode\Tests\Unit\Security;
 use Phycode\Agent\RunPolicy;
 use Phycode\Exec\ContainerRunner;
 use Phycode\Exec\ProcessRunner;
+use Phycode\Mcp\McpClient;
+use Phycode\Mcp\McpTool;
 use Phycode\Support\Cancellation;
 use Phycode\Tests\Support\FakeRuntime;
 use Phycode\Security\Decision;
@@ -15,6 +17,7 @@ use Phycode\Security\Rules;
 use Phycode\Tests\Support\Kit;
 use Phycode\Tests\Support\RecordingUi;
 use Phycode\Tools\BaseTool;
+use Phycode\Tools\RunCodeTool;
 use Phycode\Tools\Tool;
 use Phycode\Tools\ToolCategory;
 use Phycode\Tools\ToolContext;
@@ -245,6 +248,34 @@ final class PermissionModesTest extends TestCase
 
             self::assertSame('refused: rm -r of the root, a home folder, a system folder or a mount point is never run, in any mode and with any approval', $reason, $name);
         }
+    }
+
+    public function testTheArgumentsOfAnMcpToolAreOnTheLine(): void
+    {
+        $ui = new RecordingUi();
+        $tool = new McpTool(new McpClient('shell', ['/bin/true']), ['name' => 'run', 'description' => 'Runs a command.', 'inputSchema' => ['type' => 'object']]);
+        $permissions = new Permissions($ui);
+        $context = $this->context($ui, 'yolo');
+
+        self::assertNotNull($permissions->check($tool, $context, $tool->summarize(['command' => 'rm -rf /']), ['command' => 'rm -rf /']));
+        self::assertNotNull($permissions->check($tool, $context, 'x', ['steps' => [['run' => 'sudo rm -rf ~/']]]), 'a nested argument is read too');
+        self::assertNull($permissions->check($tool, $context, 'x', ['command' => 'ls -la /', 'path' => '/']));
+    }
+
+    public function testTheShellCallsOfRunCodeAreOnTheLineOnTheHostOnly(): void
+    {
+        FakeRuntime::install();
+        $ui = new RecordingUi();
+        $tool = new RunCodeTool();
+        $permissions = new Permissions($ui);
+        $context = $this->context($ui, 'yolo');
+        $container = new ContainerRunner(new ProcessRunner(), 'podman', 'docker.io/library/debian:trixie-slim', 'none', $this->root);
+        $inContainer = $context->forAgent(Kit::agent(), Kit::policy('yolo'), new Cancellation(), 'test', $container);
+        $args = ['language' => 'python', 'code' => "import shutil\nshutil.rmtree('/usr')"];
+
+        self::assertNotNull($permissions->check($tool, $context, $tool->summarize($args), $args));
+        self::assertNull($permissions->check($tool, $inContainer, $tool->summarize($args), $args), 'inside a container the container is the boundary');
+        self::assertNull($permissions->check($tool, $context, 'run_code python', ['language' => 'python', 'code' => "shutil.rmtree('build')"]));
     }
 
     public function testATargetRelativeToTheProjectIsResolvedFromTheProjectFolder(): void

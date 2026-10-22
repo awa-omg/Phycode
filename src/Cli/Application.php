@@ -87,6 +87,7 @@ final class Application
             'schema' => null,
             'continue' => false,
             'resume' => null,
+            'fork' => null,
             'images' => [],
             'help' => false,
         ];
@@ -131,6 +132,7 @@ final class Application
                     case 'sandbox':
                     case 'model':
                     case 'resume':
+                    case 'fork':
                     case 'output-schema':
                     case 'max-turns':
                     case 'output-format':
@@ -213,11 +215,17 @@ final class Application
         if ($options['continue'] && $options['resume'] !== null) {
             throw new PhycodeException('--continue and --resume cannot be used together: one picks the last session, the other a session by its id');
         }
+        if ($options['fork'] !== null && ($options['continue'] || $options['resume'] !== null)) {
+            throw new PhycodeException('--fork starts from the one session it names: do not give --continue or --resume with it');
+        }
+        if ($options['fork'] !== null && !SessionStore::validId((string) $options['fork'])) {
+            throw new PhycodeException('--fork needs a session id, as /sessions lists them');
+        }
         if ($options['resume'] !== null && !SessionStore::validId((string) $options['resume'])) {
             throw new PhycodeException('--resume needs a session id, as /sessions lists them');
         }
         if ($options['command'] !== 'run') {
-            $only = ['format' => ['--output-format', 'text'], 'model' => ['--model', null], 'max_turns' => ['--max-turns', null], 'schema' => ['--output-schema', null], 'continue' => ['--continue', false], 'resume' => ['--resume', null], 'images' => ['--image', []]];
+            $only = ['format' => ['--output-format', 'text'], 'model' => ['--model', null], 'max_turns' => ['--max-turns', null], 'schema' => ['--output-schema', null], 'continue' => ['--continue', false], 'resume' => ['--resume', null], 'fork' => ['--fork', null], 'images' => ['--image', []]];
             foreach ($only as $key => [$flag, $default]) {
                 if ($options[$key] !== $default && !($key === 'format' && $options['format'] === 'json')) {
                     throw new PhycodeException("{$flag} is an option of run: phycode run {$flag} ... 'task'");
@@ -426,15 +434,18 @@ final class Application
 
     private function sessionToContinue(Kernel $kernel, array $options): ?array
     {
-        if (!$options['continue'] && $options['resume'] === null) {
+        if (!$options['continue'] && $options['resume'] === null && $options['fork'] === null) {
             return null;
         }
         $store = new SessionStore($kernel->workspace->root);
-        $id = $options['resume'] ?? ($store->all()[0]['id'] ?? throw new PhycodeException('there is no session to continue in this project; start one with phycode run "task"'));
+        $id = $options['fork'] ?? $options['resume'] ?? ($store->all()[0]['id'] ?? throw new PhycodeException('there is no session to continue in this project; start one with phycode run "task"'));
         $session = $store->load((string) $id);
         if (!$kernel->config->hasProfile($session['profile']) && $options['profile'] === null) {
             $kernel->ui->notice('warn', "the profile '{$session['profile']}' of the session is not in the config; the default profile runs it");
             $session['profile'] = '';
+        }
+        if ($options['fork'] !== null) {
+            $session = [...$session, 'id' => SessionStore::newId(), 'createdAt' => SessionStore::now(), 'parent' => $session['id'], 'forkAt' => count($session['messages'])];
         }
 
         return $session;
@@ -454,7 +465,7 @@ final class Application
                 'model' => $model ?? $kernel->config->profile($profile)->model,
                 'thinking' => $thinking ?? $kernel->config->profile($profile)->thinking,
                 'messages' => ChatSession::redacted($messages, $secrets),
-            ]);
+            ] + array_filter(['parent' => $previous['parent'] ?? null, 'forkAt' => $previous['forkAt'] ?? null], static fn (string|int|null $value): bool => $value !== null));
         } catch (PhycodeException $error) {
             $kernel->ui->notice('warn', 'the session is not saved: ' . Redaction::text($error->getMessage(), $secrets));
         }
@@ -1075,6 +1086,7 @@ final class Application
               --image FILE     run only: send an image (PNG, JPEG, GIF, WebP) with the task (repeatable); the profile needs vision
               --continue, -c   run only: go on with the newest session of the project
               --resume ID, -r ID  run only: go on with a saved session (/sessions lists the ids)
+              --fork ID        run only: start from a copy of a saved session, which stays as it was
               --add-dir DIR    read-only folder outside the project: read, list and grep may use it (repeatable)
 
             serve options:

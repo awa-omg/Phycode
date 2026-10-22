@@ -28,7 +28,9 @@ use Phycode\Llm\PromptCache;
 use Phycode\Mcp\McpCatalog;
 use Phycode\Security\PathException;
 use Phycode\Session\ContextBudget;
+use Phycode\Session\SessionFork;
 use Phycode\Session\SessionStore;
+use Phycode\Session\SessionTree;
 use Phycode\Session\Transcript;
 use Phycode\Skills\SkillCatalog;
 use Phycode\Support\Cancellation;
@@ -50,6 +52,8 @@ final class ChatSession
         ['name' => '/context max N|Nk|off [--save]', 'description' => 'set the window the autocompact threshold is measured against; off uses the window of the model, and --save writes it to the config'],
         ['name' => '/compact [INSTRUCTIONS]', 'description' => 'summarise the older turns with the model, keeping the last quarter of the window; the summary replaces them'],
         ['name' => '/sessions [switch ID|new]', 'description' => 'list the saved sessions, switch to one, or start a new one'],
+        ['name' => '/fork [N]', 'description' => 'continue in a copy of this session, keeping the first N of your messages (all by default); the original stays as it is'],
+        ['name' => '/tree', 'description' => 'show the sessions as a tree: each fork under the session it came from'],
         ['name' => '/clear', 'description' => 'start a new conversation'],
         ['name' => '/handoff', 'description' => 'write a handoff of this session with the model and show it; on a yes it is saved in .phycode/handoffs and a new session starts with it'],
         ['name' => '/usage', 'description' => 'show the tokens this session has spent, by model, and what they cost when the config has prices (pricing)'],
@@ -111,6 +115,8 @@ final class ChatSession
     private string $sessionId;
     private string $createdAt;
     private string $title = '';
+    private ?string $parent = null;
+    private ?int $forkAt = null;
     private ?\Closure $frame = null;
     private ?\Closure $autoCompacted = null;
     private readonly PromptTemplates $templates;
@@ -545,8 +551,34 @@ final class ChatSession
         $this->sessionId = $session['id'];
         $this->createdAt = $session['createdAt'];
         $this->title = $session['title'];
+        $this->parent = $session['parent'] ?? null;
+        $this->forkAt = $session['forkAt'] ?? null;
         $this->conversationTokens = null;
         $this->cacheStats = null;
+    }
+
+    public function fork(?int $turns = null): string
+    {
+        $this->guardIdle();
+        $messages = $this->conversation->messages();
+        $retained = $turns === null ? $messages : SessionFork::keep($messages, $turns);
+        $this->persist();
+        $this->parent = $this->sessionId;
+        $this->sessionId = SessionStore::newId();
+        $this->createdAt = SessionStore::now();
+        $this->forkAt = count($retained);
+        $this->conversation->replaceMessages($retained);
+        $this->conversation->setSystem($this->systemPrompt());
+        $this->conversationTokens = null;
+        $this->cacheStats = null;
+        $this->persist();
+
+        return $this->sessionId;
+    }
+
+    public function treeText(): string
+    {
+        return $this->redact(SessionTree::render($this->store->all(), $this->sessionId));
     }
 
     public function newSession(): void
@@ -556,6 +588,8 @@ final class ChatSession
         $this->sessionId = SessionStore::newId();
         $this->createdAt = SessionStore::now();
         $this->title = '';
+        $this->parent = null;
+        $this->forkAt = null;
         $this->conversation = $this->freshConversation();
         $this->kernel->todos->clear();
         $this->conversationTokens = null;
@@ -692,6 +726,16 @@ final class ChatSession
         }
         if ($input === '/sessions' || str_starts_with($input, '/sessions ')) {
             $this->sessionsCommand(trim(substr($input, strlen('/sessions'))));
+
+            return true;
+        }
+        if ($input === '/fork' || str_starts_with($input, '/fork ')) {
+            $this->forkCommand(trim(substr($input, strlen('/fork'))));
+
+            return true;
+        }
+        if ($input === '/tree') {
+            $ui->panel('Sessions tree', $this->treeText());
 
             return true;
         }
@@ -1500,6 +1544,23 @@ final class ChatSession
         }
     }
 
+    private function forkCommand(string $argument): void
+    {
+        $ui = $this->kernel->ui;
+        if ($argument !== '' && preg_match('/^[1-9][0-9]{0,5}$/D', $argument) !== 1) {
+            $ui->notice('error', 'usage: /fork [N], where N is how many of your messages the new session keeps');
+
+            return;
+        }
+        try {
+            $from = $this->sessionId;
+            $id = $this->fork($argument === '' ? null : (int) $argument);
+            $ui->notice('info', "forked {$from} into {$id}, keeping " . SessionFork::userTurns($this->conversation->messages()) . " of your messages; {$from} stays as it was");
+        } catch (PhycodeException $error) {
+            $ui->notice('error', $this->redact($error->getMessage()));
+        }
+    }
+
     private function sessionPanel(): void
     {
         $items = [];
@@ -1975,7 +2036,7 @@ final class ChatSession
                 'thinking' => $this->thinking,
                 'todos' => $this->kernel->todos->toArray(),
                 'messages' => self::redacted($messages, $secrets),
-            ]);
+            ] + array_filter(['parent' => $this->parent, 'forkAt' => $this->forkAt], static fn (string|int|null $value): bool => $value !== null));
         } catch (PathException) {
         } catch (PhycodeException $error) {
             $this->kernel->ui->notice('warn', 'the session is not saved: ' . $this->redact($error->getMessage()));

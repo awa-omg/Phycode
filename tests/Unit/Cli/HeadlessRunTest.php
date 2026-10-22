@@ -159,6 +159,29 @@ final class HeadlessRunTest extends TestCase
         self::assertStringContainsString('session: ' . $firstResult['session_id'], $third->stderr);
     }
 
+    public function testForkStartsFromACopyOfTheSessionAndLeavesTheOriginalAsItWas(): void
+    {
+        $profile = $this->serve([self::reply('The answer is 42.'), self::reply('Because I was asked.')]);
+        $cwd = Kit::folder('hl-fork');
+        $home = Kit::folder('hl-fork-home');
+        $first = PhycodeRun::run(['run', '--cwd', $cwd, '--output-format', 'json', 'What is the answer?'], $profile, home: $home);
+        $firstId = (string) (Json::object($first->stdout)['session_id'] ?? '');
+        $before = (string) file_get_contents("{$cwd}/.phycode/sessions/{$firstId}.json");
+
+        $fork = PhycodeRun::run(['run', '--cwd', $cwd, '--fork', $firstId, '--output-format', 'json', 'Why?'], $profile, home: $home);
+
+        $forkId = (string) (Json::object($fork->stdout)['session_id'] ?? '');
+        self::assertSame(0, $fork->status, $fork->stderr);
+        self::assertNotSame($firstId, $forkId);
+        self::assertSame($before, (string) file_get_contents("{$cwd}/.phycode/sessions/{$firstId}.json"), 'the original is not touched');
+        $saved = Json::object((string) file_get_contents("{$cwd}/.phycode/sessions/{$forkId}.json")) ?? [];
+        self::assertSame($firstId, $saved['parent']);
+        self::assertSame(count(Json::object($before)['messages']), $saved['forkAt']);
+        $contents = array_column($this->chats()[1]['messages'], 'content');
+        self::assertContains('The answer is 42.', $contents);
+        self::assertSame('Why?', end($contents));
+    }
+
     public function testContinueWithoutASessionAndResumeOfAnUnknownOneFail(): void
     {
         $profile = ['base_url' => 'http://127.0.0.1:9', 'model' => 'qwen35-2b'];
@@ -264,6 +287,9 @@ final class HeadlessRunTest extends TestCase
             [['run', '--output-format', 'xml', 'x'], '--output-format must be text, json or stream-json'],
             [['run', '--json', '--output-format', 'stream-json', 'x'], '--json and --output-format say different formats'],
             [['run', '--resume', '../etc', 'x'], '--resume needs a session id'],
+            [['run', '--fork', '../etc', 'x'], '--fork needs a session id'],
+            [['run', '--fork', 'x1', '--continue', 'x'], '--fork starts from the one session it names'],
+            [['chat', '--fork', 'x1'], '--fork is an option of run'],
             [['run', '--output-schema', '/nonexistent/schema.json', 'x'], "--output-schema: '/nonexistent/schema.json' is neither a JSON object nor a readable file"],
         ] as [$arguments, $message]) {
             $run = PhycodeRun::run($arguments, $profile);

@@ -738,7 +738,7 @@ final class RpcServer
 
             return true;
         }
-        if (self::isWord($line, '/sessions')) {
+        if (self::isWord($line, '/sessions') || self::isWord($line, '/fork')) {
             $this->session->handle($line);
             $this->sessionChanged();
 

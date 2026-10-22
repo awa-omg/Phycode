@@ -248,7 +248,7 @@ final class RpcServer
             ['name' => '/deepresearch QUESTION', 'description' => 'research a question on the web and cite the sources'],
         ];
         foreach ($commands as $index => $command) {
-            if (in_array($command['name'], ['/init', '/handoff', ...$templates], true)) {
+            if (in_array($command['name'], ['/init', '/handoff', ...$templates], true) || str_starts_with($command['name'], '/goal ')) {
                 $commands[$index]['turn'] = true;
             }
         }

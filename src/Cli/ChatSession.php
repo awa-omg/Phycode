@@ -6,6 +6,8 @@ namespace Phycode\Cli;
 
 use Phycode\Agent\AgentDefinition;
 use Phycode\Agent\Conversation;
+use Phycode\Agent\Goal;
+use Phycode\Agent\GoalJudge;
 use Phycode\Agent\OutcomeStatus;
 use Phycode\Agent\RunPolicy;
 use Phycode\Agent\RunSetup;
@@ -26,6 +28,7 @@ use Phycode\Llm\Image;
 use Phycode\Llm\EffortMapping;
 use Phycode\Llm\PromptCache;
 use Phycode\Mcp\McpCatalog;
+use Phycode\Security\HardLine;
 use Phycode\Security\PathException;
 use Phycode\Session\ContextBudget;
 use Phycode\Session\SessionFork;
@@ -52,6 +55,7 @@ final class ChatSession
         ['name' => '/context max N|Nk|off [--save]', 'description' => 'set the window the autocompact threshold is measured against; off uses the window of the model, and --save writes it to the config'],
         ['name' => '/compact [INSTRUCTIONS]', 'description' => 'summarise the older turns with the model, keeping the last quarter of the window; the summary replaces them'],
         ['name' => '/sessions [switch ID|new]', 'description' => 'list the saved sessions, switch to one, or start a new one'],
+        ['name' => '/goal [--check COMMAND] [--max N] CONDITION', 'description' => 'work on a goal turn after turn until it is met: the command exits with 0, or the model judge finds the report shows it; up to N turns (8 by default)'],
         ['name' => '/fork [N]', 'description' => 'continue in a copy of this session, keeping the first N of your messages (all by default); the original stays as it is'],
         ['name' => '/tree', 'description' => 'show the sessions as a tree: each fork under the session it came from'],
         ['name' => '/clear', 'description' => 'start a new conversation'],
@@ -83,6 +87,9 @@ final class ChatSession
     private const BUILD_PROMPT = 'The plan above was approved. Write its steps with the todo tool, then carry them out one by one, marking each step completed when it is done. '
         . 'If a step turns out to be wrong or impossible, stop and say what you found instead of improvising.';
 
+    private const GOAL_CHECK_SECONDS = 600;
+    private const GOAL_CHECK_BYTES = 65536;
+    private const GOAL_OUTPUT_CHARS = 2500;
     private const SIDE_MESSAGES = 6;
     private const SUMMARY_ROOM = 1000;
 
@@ -726,6 +733,11 @@ final class ChatSession
         }
         if ($input === '/sessions' || str_starts_with($input, '/sessions ')) {
             $this->sessionsCommand(trim(substr($input, strlen('/sessions'))));
+
+            return true;
+        }
+        if ($input === '/goal' || str_starts_with($input, '/goal ')) {
+            $this->goalCommand(trim(substr($input, strlen('/goal'))));
 
             return true;
         }
@@ -1542,6 +1554,66 @@ final class ChatSession
         } catch (PhycodeException $error) {
             $ui->notice('error', $this->redact($error->getMessage()));
         }
+    }
+
+    private function goalCommand(string $argument): void
+    {
+        $ui = $this->kernel->ui;
+        try {
+            $goal = Goal::parse($argument);
+            if ($goal->check !== null) {
+                $hard = HardLine::reason('bash: ' . $goal->check, $this->kernel->workspace->root);
+                if ($hard !== null) {
+                    throw new PhycodeException("refused: {$hard} is never run, in any mode and with any approval");
+                }
+            }
+        } catch (PhycodeException $error) {
+            $ui->notice('error', $this->redact($error->getMessage()));
+
+            return;
+        }
+        $this->runAsTurn(fn (Cancellation $cancel) => $this->pursue($goal, $cancel), true);
+    }
+
+    private function pursue(Goal $goal, Cancellation $cancel): void
+    {
+        $ui = $this->kernel->ui;
+        $prompt = $goal->firstPrompt();
+        for ($turn = 1; $turn <= $goal->turns; $turn++) {
+            $mark = $this->kernel->changes->mark();
+            $this->runTurn($prompt, $cancel);
+            if ($cancel->isCancelled() || $this->lastStatus !== 'completed') {
+                $ui->notice('warn', "goal paused after turn {$turn}: the turn ended ({$this->lastStatus}); /goal with the same words starts it again");
+
+                return;
+            }
+            [$met, $reason] = $goal->check === null
+                ? GoalJudge::verdict($this->kernel->providers->forProfile($this->profile, $this->model, $this->thinking), $goal->condition, $this->lastAssistantText(), $this->kernel->changes->since($mark), $cancel, fn (?Usage $usage) => $this->kernel->usage->record($this->profile, $this->model, $usage))
+                : $this->checked($goal->check, $cancel);
+            if ($met) {
+                $ui->notice('info', "goal met after {$turn} " . ($turn === 1 ? 'turn' : 'turns') . ': ' . $this->redact($reason));
+
+                return;
+            }
+            $ui->notice('info', "goal not met after turn {$turn} of {$goal->turns}: " . $this->redact($reason));
+            $prompt = $goal->nextPrompt($reason);
+        }
+        $ui->notice('warn', "goal not met after {$goal->turns} turns; /goal with the same words, or --max with more turns, goes on");
+    }
+
+    private function checked(string $command, Cancellation $cancel): array
+    {
+        $runner = $this->kernel->sandboxes->runnerFor($this->primary->sandbox);
+        $result = $runner->run(['bash', '-c', $command], $this->kernel->workspace->root, self::GOAL_CHECK_SECONDS, self::GOAL_CHECK_BYTES, $cancel);
+        if ($result->interrupted === 'timeout') {
+            return [false, "the check timed out after " . self::GOAL_CHECK_SECONDS . ' seconds'];
+        }
+        if ($result->exitCode === 0) {
+            return [true, "{$command} exits with 0"];
+        }
+        $output = trim($result->stdout . ($result->stdout !== '' && $result->stderr !== '' ? "\n" : '') . $result->stderr);
+
+        return [false, "{$command} exits with {$result->exitCode}" . ($output === '' ? '' : ":\n" . Text::headTail($this->redact($output), self::GOAL_OUTPUT_CHARS))];
     }
 
     private function forkCommand(string $argument): void

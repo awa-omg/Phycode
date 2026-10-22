@@ -17,7 +17,7 @@ final class RpcTurnCommandsTest extends RpcTestCase
         ]]);
     }
 
-    public function testOnlyInitHandoffAndTheTemplatesCarryTheTurnFlag(): void
+    public function testOnlyGoalInitHandoffAndTheTemplatesCarryTheTurnFlag(): void
     {
         $prompts = $this->harness->cwd . '/.phycode/prompts';
         mkdir($prompts, 0700, true);
@@ -33,6 +33,6 @@ final class RpcTurnCommandsTest extends RpcTestCase
                 $flagged[] = $command['name'];
             }
         }
-        self::assertSame(['/handoff', '/init', '/triage [ARGUMENTS]'], $flagged, 'in the order the session lists them');
+        self::assertSame(['/goal [--check COMMAND] [--max N] CONDITION', '/handoff', '/init', '/triage [ARGUMENTS]'], $flagged, 'in the order the session lists them');
     }
 }

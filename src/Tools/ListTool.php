@@ -9,7 +9,6 @@ use Phycode\Security\Workspace;
 final class ListTool extends BaseTool
 {
     private const MAX_ENTRIES = 400;
-    private const IGNORED = ['.git', '.phycode', 'node_modules', 'vendor', '__pycache__', '.venv'];
 
     public function name(): string
     {
@@ -48,8 +47,8 @@ final class ListTool extends BaseTool
         }
         $relative = $context->workspace->relative($directory);
 
-        $inProject = $context->workspace->readOnlyFolder($directory) === null;
-        $entries = $inProject && is_dir($context->workspace->root . '/.git') ? $this->gitEntries($context, $relative, $depth) : null;
+        $listed = ProjectFiles::listed($context, $directory, $relative);
+        $entries = $listed === null ? null : $this->levels($listed, $relative, $depth);
         $entries ??= $this->walk($directory, $context->workspace, $depth);
         sort($entries);
 
@@ -65,22 +64,12 @@ final class ListTool extends BaseTool
         return ToolResult::ok(implode("\n", $entries) . $footer, ['count' => $total]);
     }
 
-    private function gitEntries(ToolContext $context, string $relative, int $depth): ?array
+    private function levels(array $files, string $relative, int $depth): array
     {
-        $argv = ['git', '-C', $context->workspace->root, 'ls-files', '--cached', '--others', '--exclude-standard', '-z'];
-        if ($relative !== '.') {
-            $argv[] = '--';
-            $argv[] = $relative;
-        }
-        $result = $context->processes->run($argv, $context->workspace->root, 20, 4194304, $context->cancel);
-        if (!$result->succeeded()) {
-            return null;
-        }
-
         $base = $relative === '.' ? '' : $relative . '/';
         $entries = [];
-        foreach (explode("\0", $result->stdout) as $file) {
-            if ($file === '' || ($base !== '' && !str_starts_with($file, $base))) {
+        foreach ($files as $file) {
+            if ($base !== '' && !str_starts_with($file, $base)) {
                 continue;
             }
             $parts = explode('/', substr($file, strlen($base)));
@@ -101,7 +90,7 @@ final class ListTool extends BaseTool
         $iterator = new \RecursiveIteratorIterator(
             new \RecursiveCallbackFilterIterator(
                 new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS),
-                static fn (\SplFileInfo $entry): bool => !in_array($entry->getFilename(), self::IGNORED, true),
+                static fn (\SplFileInfo $entry): bool => !in_array($entry->getFilename(), ProjectFiles::IGNORED, true),
             ),
             \RecursiveIteratorIterator::SELF_FIRST,
         );

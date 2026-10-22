@@ -55,6 +55,7 @@ use Phycode\Tools\GhWriteTool;
 use Phycode\Tools\GitReadTool;
 use Phycode\Tools\GitRemoteTool;
 use Phycode\Tools\GitWriteTool;
+use Phycode\Tools\GlobTool;
 use Phycode\Tools\GrepTool;
 use Phycode\Tools\JobTool;
 use Phycode\Tools\ListTool;
@@ -158,6 +159,7 @@ final class Kernel
         $this->fixedTools = [
             new ReadTool(),
             new ListTool(),
+            new GlobTool(),
             new GrepTool(),
             new RepoMapTool(),
             new WriteTool(),

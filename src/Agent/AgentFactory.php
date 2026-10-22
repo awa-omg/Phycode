@@ -8,11 +8,10 @@ use Phycode\Support\PhycodeException;
 
 final class AgentFactory
 {
-    private const TOOL_NAMES = ['read', 'list', 'grep', 'repo_map', 'write', 'edit', 'move', 'delete', 'bash', 'run_code', 'ssh', 'ssh_copy', 'deploy', 'deploy_info', 'gh_read', 'gh_write', 'task', 'todo'];
+    private const TOOL_NAMES = ['read', 'list', 'glob', 'grep', 'repo_map', 'write', 'edit', 'move', 'delete', 'bash', 'run_code', 'ssh', 'ssh_copy', 'deploy', 'deploy_info', 'gh_read', 'gh_write', 'task', 'todo'];
 
     private const TOOL_ALIASES = [
         'ls' => 'list',
-        'glob' => 'list',
         'multiedit' => 'edit',
         'agent' => 'task',
     ];

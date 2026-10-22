@@ -3,7 +3,7 @@ name: explore
 description: Read-only search of the codebase. Use it to find files, symbols or answers that need many reads.
 mode: subagent
 permission: readonly
-tools: [read, list, grep]
+tools: [read, list, glob, grep]
 max_turns: 8
 temperature: 0.1
 ---

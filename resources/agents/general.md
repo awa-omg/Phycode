@@ -2,7 +2,7 @@
 name: general
 description: General subagent for a self-contained subtask that may edit files or run commands.
 mode: subagent
-tools: [read, list, grep, write, edit, move, delete, bash, run_code]
+tools: [read, list, glob, grep, write, edit, move, delete, bash, run_code]
 max_turns: 12
 temperature: 0.2
 ---

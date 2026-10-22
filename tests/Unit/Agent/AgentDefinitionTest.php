@@ -22,7 +22,7 @@ final class AgentDefinitionTest extends TestCase
         $agent = AgentFactory::fromFile($file, 'project', $notices);
 
         self::assertNotNull($agent);
-        self::assertSame(['read', 'grep', 'list', 'bash'], $agent->tools);
+        self::assertSame(['read', 'grep', 'glob', 'bash'], $agent->tools);
         self::assertSame(['bash'], $agent->excludedTools);
         self::assertSame(['write', 'exec'], $agent->deniedCategories);
         self::assertNull($agent->profile, 'a project agent cannot choose the profile, so model: sonnet is dropped');

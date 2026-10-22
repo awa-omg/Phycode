@@ -28,6 +28,7 @@ use Phycode\Llm\Image;
 use Phycode\Llm\EffortMapping;
 use Phycode\Llm\PromptCache;
 use Phycode\Mcp\McpCatalog;
+use Phycode\Plugin\Plugins;
 use Phycode\Security\HardLine;
 use Phycode\Security\PathException;
 use Phycode\Session\ContextBudget;
@@ -147,7 +148,7 @@ final class ChatSession
         foreach ($kernel->commands->commands() as $command) {
             $taken[] = self::wordOf($command['name']);
         }
-        $this->templates = new PromptTemplates($kernel->workspace->root, $taken);
+        $this->templates = new PromptTemplates($kernel->workspace->root, $taken, Plugins::promptFolders($kernel->config->configDir));
         foreach ($this->templates->warnings() as $warning) {
             $kernel->ui->notice('warn', $this->redact($warning));
         }

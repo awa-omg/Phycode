@@ -7,6 +7,7 @@ namespace Phycode\Tools;
 use Phycode\Config\Config;
 use Phycode\Config\ConfigException;
 use Phycode\Gentle\GentleAi;
+use Phycode\Plugin\Plugins;
 use Phycode\Skills\SkillCatalog;
 use Phycode\Skills\SkillLoader;
 use Phycode\Skills\SkillRegistry;
@@ -64,7 +65,7 @@ final readonly class ToolSettings
         }
         $home = getenv('HOME');
         $homePath = is_string($home) && $home !== '' ? $home : null;
-        $places = SkillCatalog::places($root, $homePath, SkillCatalog::userFolder($config->configDir));
+        $places = SkillCatalog::places($root, $homePath, SkillCatalog::userFolder($config->configDir), Plugins::skillFolders($config->configDir));
         $loader = new SkillLoader(new SkillRegistry(new GentleAi(), $bin, $root), places: $places, root: $root, home: $homePath);
         $tools[] = new SkillTool($loader, $config->skillsEnabled() && $gentleReady);
         $tools[] = new SkillManageTool(new SkillWriter($config->configDir), $config->skillsEnabled(), $config->skillsAutonomy());

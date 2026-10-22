@@ -25,6 +25,7 @@ final class SkillIndex
         private readonly string $cwd,
         private readonly ?string $home,
         private readonly string $userFolder,
+        private readonly array $pluginFolders = [],
     ) {
     }
 
@@ -39,7 +40,7 @@ final class SkillIndex
             $this->notes[] = $error->getMessage();
             $gentle = null;
         }
-        $this->catalog = SkillCatalog::discover($this->cwd, $this->home, $gentle, $bin, $this->notes, $this->userFolder);
+        $this->catalog = SkillCatalog::discover($this->cwd, $this->home, $gentle, $bin, $this->notes, $this->userFolder, $this->pluginFolders);
 
         $this->entries = [];
         $titles = [];

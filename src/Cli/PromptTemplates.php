@@ -14,15 +14,23 @@ final class PromptTemplates
 
     private array $texts = [];
 
+    private array $origins = [];
+
     private array $warnings = [];
 
-    public function __construct(string $root, array $taken)
+    public function __construct(string $root, array $taken, array $pluginFolders = [])
     {
         try {
-            $folder = Files::runtimeFolder($root, 'prompts');
+            $this->load(Files::runtimeFolder($root, 'prompts'), '.phycode/prompts', $taken);
         } catch (PathException) {
-            return;
         }
+        foreach ($pluginFolders as $plugin => $folder) {
+            $this->load($folder, "the plugin {$plugin}", $taken);
+        }
+    }
+
+    private function load(string $folder, string $origin, array $taken): void
+    {
         if (!is_dir($folder)) {
             return;
         }
@@ -32,11 +40,12 @@ final class PromptTemplates
                 continue;
             }
             $name = substr($file, 0, -3);
-            $reason = self::leftOutBecause($name, $path, $taken);
+            $reason = isset($this->texts[$name]) ? "a template of that name was loaded before it, from {$this->origins[$name]}" : self::leftOutBecause($name, $path, $taken);
             if ($reason !== null) {
                 $this->warnings[] = "the prompt template {$file} is not used: {$reason}";
             } else {
                 $this->texts[$name] = trim((string) file_get_contents($path));
+                $this->origins[$name] = $origin;
             }
         }
     }
@@ -65,7 +74,7 @@ final class PromptTemplates
     {
         $commands = [];
         foreach (array_keys($this->texts) as $name) {
-            $commands[] = ['name' => "/{$name} [ARGUMENTS]", 'description' => "prompt template from .phycode/prompts/{$name}.md"];
+            $commands[] = ['name' => "/{$name} [ARGUMENTS]", 'description' => $this->origins[$name] === '.phycode/prompts' ? "prompt template from .phycode/prompts/{$name}.md" : "prompt template from {$this->origins[$name]}"];
         }
 
         return $commands;

@@ -31,6 +31,7 @@ use Phycode\Llm\UsageMeter;
 use Phycode\Lsp\LspServers;
 use Phycode\Mcp\McpServers;
 use Phycode\Memory\MemoryStore;
+use Phycode\Plugin\Plugins;
 use Phycode\Review\ReviewCommands;
 use Phycode\Security\Permissions;
 use Phycode\Security\Rules;
@@ -150,6 +151,9 @@ final class Kernel
         $root = $this->workspace->root;
         $this->sandboxes = new SandboxSelector($this->config->sandbox, $sandbox, $this->processes, $root);
         $this->agents = AgentRegistry::load($root, $root, $configDir, $home, dirname(__DIR__, 2) . '/resources/agents');
+        foreach (Plugins::agentFolders($configDir) as $plugin => $folder) {
+            $this->agents->addFolder($folder, "plugin:{$plugin}");
+        }
         foreach ($this->agents->notices() as $notice) {
             $this->ui->notice('warn', $notice);
         }
@@ -208,7 +212,7 @@ final class Kernel
         $this->runner = new AgentRunner(new Hooks($this->config->hooks()), new \Phycode\Agent\Checks($this->config->checks()), $this->usage);
         $this->prompts = new PromptBuilder();
         $skillsHome = getenv('HOME');
-        $this->skillIndex = new SkillIndex($root, is_string($skillsHome) && $skillsHome !== '' ? $skillsHome : null, SkillCatalog::userFolder($configDir));
+        $this->skillIndex = new SkillIndex($root, is_string($skillsHome) && $skillsHome !== '' ? $skillsHome : null, SkillCatalog::userFolder($configDir), Plugins::skillFolders($configDir));
         $instructionNotices = [];
         $this->instructions = AgentsMd::load($root, $root, $configDir, $this->config->limits->agentsMdBytes, $instructionNotices);
         foreach ($instructionNotices as $notice) {

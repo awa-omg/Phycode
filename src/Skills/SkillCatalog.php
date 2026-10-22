@@ -24,13 +24,13 @@ final class SkillCatalog
     private const READ_BYTES = 65536;
     private const LOCK_BYTES = 1048576;
 
-    public static function discover(string $cwd, ?string $home, ?GentleAi $gentle, ?string $gentleBin = null, array &$notes = [], ?string $userFolder = null): array
+    public static function discover(string $cwd, ?string $home, ?GentleAi $gentle, ?string $gentleBin = null, array &$notes = [], ?string $userFolder = null, array $pluginFolders = []): array
     {
         $items = [];
         $skipped = 0;
         $seen = [];
         $sources = self::lockedSources($cwd);
-        foreach (self::places($cwd, $home, $userFolder) as [$category, $folder]) {
+        foreach (self::places($cwd, $home, $userFolder, $pluginFolders) as [$category, $folder]) {
             foreach (self::scan($folder, $skipped) as $skill) {
                 $real = realpath($skill['path']) ?: $skill['path'];
                 if (isset($seen[$real])) {
@@ -87,7 +87,7 @@ final class SkillCatalog
         return str_starts_with(realpath($path) ?: $path, $project . '/');
     }
 
-    public static function places(string $cwd, ?string $home, ?string $userFolder): array
+    public static function places(string $cwd, ?string $home, ?string $userFolder, array $pluginFolders = []): array
     {
         $places = [];
         foreach (self::FOLDERS as $folder) {
@@ -100,6 +100,9 @@ final class SkillCatalog
         }
         if ($userFolder !== null) {
             $places[] = [self::PHYCODE, $userFolder];
+        }
+        foreach ($pluginFolders as $folder) {
+            $places[] = [self::PHYCODE, $folder];
         }
 
         return $places;

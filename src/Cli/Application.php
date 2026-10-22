@@ -27,6 +27,7 @@ use Phycode\Llm\Llama\LlamaDiscovery;
 use Phycode\Llm\Llama\LlamaDoctor;
 use Phycode\Llm\LlmException;
 use Phycode\Mcp\McpCli;
+use Phycode\Plugin\PluginCli;
 use Phycode\Rpc\JsonLines;
 use Phycode\Rpc\RpcServer;
 use Phycode\Rpc\RpcUi;
@@ -264,6 +265,7 @@ final class Application
             'ssh' => $this->ssh($options),
             'mcp' => $this->mcpCommand($options),
             'deploy' => $this->deploy($options),
+            'plugin' => $this->plugin($options),
             'shell' => ShellIntegration::cli($options['positional']),
             'btw-run' => $this->btwRun(),
             'proxy-run' => $this->proxyRun($options),
@@ -886,6 +888,13 @@ final class Application
         return 0;
     }
 
+    private function plugin(array $options): int
+    {
+        $home = (string) (getenv('HOME') ?: '/root');
+
+        return PluginCli::run($options['positional'], rtrim((string) (getenv('XDG_CONFIG_HOME') ?: $home . '/.config'), '/') . '/phycode', STDOUT, STDERR);
+    }
+
     private function mcpCommand(array $options): int
     {
         $home = (string) (getenv('HOME') ?: '/root');
@@ -1069,6 +1078,7 @@ final class Application
               phycode ssh [ACTION]              hosts the model may run commands on: list, add, remove, trust, test
               phycode mcp [ACTION]              MCP servers: list, login NAME, logout NAME, test NAME
               phycode deploy [ACTION]           where the model may deploy: list, add, remove, secret, plan, history; or NAME ACTION
+              phycode plugin [ACTION]           plugins that bring agents, skills and prompt templates: list, add SOURCE, remove NAME
               phycode version
 
             Options:

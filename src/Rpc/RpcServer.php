@@ -17,6 +17,7 @@ use Phycode\Config\SearchProviderWriter;
 use Phycode\Git\Branch;
 use Phycode\Llm\Canonical\Usage;
 use Phycode\Llm\EndpointDetector;
+use Phycode\Plugin\Plugins;
 use Phycode\Research\DeepResearch;
 use Phycode\Support\Cancellation;
 use Phycode\Support\Entry;
@@ -240,7 +241,7 @@ final class RpcServer
 
     private function commands(): array
     {
-        $templates = array_column((new PromptTemplates($this->kernel->workspace->root, []))->commands(), 'name');
+        $templates = array_column((new PromptTemplates($this->kernel->workspace->root, [], Plugins::promptFolders($this->kernel->config->configDir)))->commands(), 'name');
         $commands = [
             ...$this->session->commands(),
             ['name' => '/config', 'description' => 'show and change the settings'],

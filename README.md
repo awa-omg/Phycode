@@ -69,7 +69,7 @@ The optional [gentle-ai](https://github.com/Gentleman-Programming/gentle-ai) int
 | Composer | 2.x |
 | Model server | llama.cpp `llama-server` (start it with `--jinja` for native tool calls), Ollama, an OpenAI-compatible endpoint, or a hosted provider with an API key |
 | Terminal UI | Go 1.26 or later. With the default `GOTOOLCHAIN=auto`, an older Go downloads the toolchain named in `tui/go.mod`. |
-| System commands | `bash` and `git`. Optional: `timeout` from GNU coreutils (phycode uses it on Linux, and on macOS as `gtimeout` after `brew install coreutils`), `rg` (ripgrep), `python3` and `node` (for `run_code`), and `gh` (for the GitHub tools). |
+| System commands | `bash` and `git`. Optional: `timeout` from GNU coreutils together with `setpriv` from util-linux (phycode uses them on Linux), `rg` (ripgrep), `python3` and `node` (for `run_code`), `gh` (for the GitHub tools), and Chrome or Chromium (for the `browser` tool). |
 | Sandboxes | `bwrap` (Linux only, with `socat` when you use `sandbox.allow_domains`), Podman, or Docker |
 
 ### Install from source
@@ -128,7 +128,7 @@ phycode runs on Linux, FreeBSD, and macOS. Windows is not supported. The hard li
 
 | Support | Systems | How it is checked |
 | --- | --- | --- |
-| Tested on every push | Ubuntu, macOS 26 with and without coreutils, FreeBSD 15.1 | `.github/workflows/ci.yml` runs the whole test suite on each of them. On FreeBSD it also runs the end-to-end test of the hard line. For Linux, macOS, and FreeBSD it builds the terminal interface. |
+| Tested on every push | Ubuntu, macOS 26 on Apple silicon and on Intel, each with and without coreutils, FreeBSD 15.1 | `.github/workflows/ci.yml` runs the whole test suite on each of them. On FreeBSD it also runs the end-to-end test of the hard line. For Linux, macOS, and FreeBSD it builds the terminal interface. |
 | Tested by hand | Debian 13, Alpine 3.24, Arch Linux, openSUSE Tumbleweed | The end-to-end test and the security and deploy unit tests, in new Podman containers (see [End-to-end test](#end-to-end-test)). |
 | Not tried | OpenBSD, NetBSD, DragonFly BSD | phycode treats the whole BSD family like FreeBSD, but nobody has run it on these. |
 | Not supported | Windows | |
@@ -141,14 +141,16 @@ On 21 October 2026, the whole test suite passed in CI on Ubuntu, macOS, and Free
 | Alpine 3.24 | `alpine:latest` | 8.5.12 | `php85` with `curl`, `mbstring`, `posix`, `pcntl`, `phar`, `openssl`, `iconv`, `tokenizer`, `dom`, `xml`, `xmlwriter`, and `ctype`, then `composer`, `bash`, `git`, `coreutils` | The `composer` package runs on PHP 8.5, so install the `php85-*` extensions, not `php84-*`. `/bin` and `/usr/bin` are separate folders, and both are on `PATH`. There is no `login.defs`, so phycode counts UIDs 1000 to 60000 as people. |
 | Arch Linux | `archlinux:latest` | 8.5.12 | `php`, `composer`, `git` | The `php` package already loads `curl`, `mbstring`, `posix`, and `pcntl`. `/bin` and `/sbin` are links to `usr/bin`. |
 | openSUSE Tumbleweed | `opensuse/tumbleweed` | 8.5.12 | `php8`, `php8-cli` with `curl`, `mbstring`, `posix`, `pcntl`, `phar`, `openssl`, `tokenizer`, `dom`, `xmlwriter`, `ctype`, `iconv`, and `zip`, then `php-composer2`, `git-core` | `login.defs` is in `/usr/etc`, not in `/etc`. phycode reads it there. |
-| FreeBSD 15.1 | `FreeBSD-15.1-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2`, and `vmactions/freebsd-vm` in CI | 8.4.26 | `php84`, `php84-composer`, the extensions named in the CI workflow, `bash`, `git` | `openssl` is part of `php84`, and there is no `php84-openssl`. `/home` is a link to `/usr/home`, and `/proc` is not mounted, so phycode finds the mounts with `/sbin/mount` and its processes with `ps`. The base `timeout` is not used (see below). |
-| macOS 26 | GitHub `macos-latest` (`macos-26-arm64`) | 8.4.27 | PHP 8.4 from `shivammathur/setup-php`, and `brew install coreutils` in one of the two runs. By hand, `brew install php composer` should do, but it is not tested | The suite passed with and without coreutils. `/tmp` is a link to `/private/tmp`. The end-to-end test does not run. |
+| FreeBSD 15.1 | `FreeBSD-15.1-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2`, and `vmactions/freebsd-vm` in CI | 8.4.26 | `php84`, `php84-composer`, the extensions named in the CI workflow, `bash`, `git` | `openssl` is part of `php84`, and there is no `php84-openssl`. `/home` is a link to `/usr/home`, and `/proc` is not mounted, so phycode finds the mounts with `/sbin/mount` and its processes with `ps`. The base `timeout` holds each command as a reaper only (see below). |
+| macOS 26 | GitHub `macos-latest` (`macos-26-arm64`) and `macos-26-intel` | 8.4.27 | PHP 8.4 from `shivammathur/setup-php`, and `brew install coreutils` in one of the two runs on each. By hand, `brew install php composer` should do, but it is not tested | The suite passed with and without coreutils. `/tmp` is a link to `/private/tmp`. The end-to-end test does not run. |
 
 On FreeBSD and macOS, phycode differs from Linux in these ways:
 
-- The FreeBSD `timeout` runs as a reaper and waits for every process a command leaves behind, so a command that started a daemon blocked until its time limit. phycode does not use it on FreeBSD. macOS has no `timeout` unless `brew install coreutils` installs `gtimeout`, and phycode uses that. Without a GNU `timeout`, phycode enforces the time limits itself, and it starts each command through a small `sh` wrapper that gives the command a process group, so it can stop what the command leaves behind.
+- The FreeBSD `timeout` runs as a reaper (`procctl(PROC_REAP_ACQUIRE)`) and, used as a time limit, waits for every process a command leaves behind, so a command that started a daemon blocked until its time limit. phycode still runs each command under it, with the time limit of the command, so every process the command starts stays its descendant, also after `setsid`, `daemon(8)`, or `env -i`, and the limit stops all of them even when phycode is gone. When the command ends by itself, the wrapper hands its exit status to phycode and lets go of what is left, so a daemon that the command started goes on and nothing waits for it.
+- A command ends when phycode ends, also when phycode is killed with `SIGKILL`. On Linux, phycode starts `timeout` through `setpriv --pdeathsig TERM`, so the kernel sends `SIGTERM` to it when phycode dies, the same `PR_SET_PDEATHSIG` that the Codex CLI uses. On FreeBSD, a small watcher in the wrapper waits for phycode with `pwait(1)`, which uses kqueue, and then stops the reaper. On macOS, and on Linux without `timeout` or `setpriv`, phycode starts each command through a small `bash` wrapper (`sh` when there is no `bash`) that gives the command a process group, and a watcher in it ends the group when phycode is gone or when the time limit passes. macOS has no parent-death signal, so the watcher checks once a second, and phycode does not use `gtimeout`. On Linux and macOS, phycode also marks each command with the variable `PHYCODE_PROCESS_TREE` in its environment, and gives it file descriptor 8, open on a deleted file of its own. phycode finds that descriptor in `/proc` on Linux and with `lsof` on macOS, so a process that also cleared its environment with `env -i` is found too. When a command runs out of time or is cancelled, or a background job is stopped, phycode stops every process that carries the mark, including one that started its own session with `setsid` or was forked twice. A command that ends by itself keeps what it started in its own session, such as the SSH connection that phycode reuses. On FreeBSD 15.1 the mark is not enough: when the randomized stack of a process ends close to its strings, the kernel cannot read its environment (`kern.proc.env` fails with `ENOMEM`), which happens to about 1 to 3 processes in 100. The regression is fixed in `stable/15` by commit `f6000e9dd934`, and the reaper does not depend on it.
 - `bwrap` works only on Linux, and the container sandboxes are tested on Linux only.
 - macOS has no `C.UTF-8` locale, so phycode sets `LC_CTYPE=UTF-8` for the commands it runs there, and `LANG=C.UTF-8` with `LC_ALL=C.UTF-8` elsewhere.
+- On macOS, the `browser` tool also looks for Chrome and Chromium in `/Applications`, in the system folder and in your home.
 
 ## Usage
 
@@ -207,6 +209,9 @@ On FreeBSD and macOS, phycode differs from Linux in these ways:
 | `phycode ssh` | Manage the SSH hosts the model may use: `list`, `add`, `remove`, `trust`, `test`. |
 | `phycode mcp` | Manage MCP servers: `list`, `login NAME`, `logout NAME`, `test NAME`. |
 | `phycode deploy` | Manage deployment targets: `list`, `add`, `remove`, `secret`, `plan`, `history`. |
+| `phycode worktree` | List (`list`) or remove (`remove NAME`) the Git worktrees that `run --worktree` made. |
+| `phycode schedule` | Run tasks on a cron schedule: `list`, `add NAME "CRON" "TASK"`, `remove NAME`, and `run`. |
+| `phycode plugin` | Manage plugins: `list`, `add SOURCE`, `remove NAME`. |
 | `phycode version` | Print the version. |
 
 Common options:
@@ -225,6 +230,8 @@ Options for `run`:
 - `--image FILE`: attach an image. The option is repeatable, and the profile needs `vision: true`.
 - `-c` or `--continue`: continue the most recent session of the project.
 - `-r ID` or `--resume ID`: continue a specific session.
+- `--fork ID`: start from a copy of a saved session. The original stays as it was.
+- `--worktree NAME`: run in a new Git worktree on the branch `phycode/NAME`. phycode removes the worktree when the run changes nothing. Otherwise it keeps the worktree, and prints how to merge or remove it.
 
 ### Terminal UI
 
@@ -250,6 +257,8 @@ These commands work in `chat`, in the full-screen interface, and over RPC.
 | `/usage` | Show the tokens spent in this session, by model, and their cost when pricing is configured. |
 | `/status` | Show the version, profile, model, sandbox, permissions, and transcript path. |
 | `/sessions` | List saved sessions. Use `/sessions switch <ID>` to change session, or `/sessions new` to start one. |
+| `/fork [N]` | Continue in a copy of the session that keeps the first N of your messages, or all of them. The original stays as it was. |
+| `/tree` | Show the sessions as a tree, with each fork under the session it came from. |
 | `/clear` | Start a new conversation. |
 | `/handoff` | Write a summary of the session for a new session. The summary is saved in `.phycode/handoffs`. |
 | `/diff` | Show the changes made by the last turn that changed files. |
@@ -257,7 +266,9 @@ These commands work in `chat`, in the full-screen interface, and over RPC.
 | `/rewind <TURN>` | Restore the files to their state before a turn, undoing that turn and every later one. |
 | `/agent <NAME>` and `/agents` | Switch the primary agent, or list the agents. |
 | `/plan [TASK]` | Switch to the `plan` agent. You approve the plan before it is built. |
+| `/goal [--check COMMAND] [--max N] CONDITION` | Work on a goal, turn after turn, until it is met. With `--check`, the goal is met when the command exits with 0. Without it, the model judges the report of each turn. The default is 8 turns, and the most is 50. |
 | `/todo [clear]` | Show or clear the task list of the session. |
+| `/memory [forget SCOPE/NAME]` | Show the notes that sessions saved, or forget one. The scope is `project` or `user`. |
 | `/image <PATH> [TEXT]` | Send an image with a question. The profile needs `vision: true`. Images up to 3.5 MB are accepted. |
 | `/skill [NAME]` and `/skills` | List or show skills. `/skills` lists the gentle-ai skills in read-only mode. |
 | `/mcp` | List the MCP servers and their tools. |
@@ -276,10 +287,12 @@ These commands work in `chat`, in the full-screen interface, and over RPC.
 
 Use `@NAME TASK` to run a subagent directly. Its report joins the conversation.
 
+Write `@PATH` anywhere in a message to send a file or a folder of the project with it. phycode appends the numbered lines of a file, or the entries of a folder, up to 6 mentions and 60 KB. It never attaches a file with a secret-like name, and it leaves a mention that is not a path as plain text. A message that starts with `@` and the name of an agent still runs that subagent.
+
 ### Scripting and output formats
 
 - `run` prints the final answer to stdout. The change summary, the transcript path, and the session ID go to stderr.
-- `--output-format json` prints one JSON object with `status`, `text`, `turns`, `tool_calls`, `reason`, `changed`, `transcript`, `session_id`, `last_usage`, and `usage`.
+- `--output-format json` prints one JSON object with `status`, `text`, `turns`, `tool_calls`, `reason`, `changed`, `transcript`, `session_id`, `last_usage`, and `usage`. With `--worktree`, it also has `worktree`: the `name`, `branch`, and `path` of the worktree, and whether phycode kept it.
 - `--output-format stream-json` prints one event per line.
 - With `--output-schema`, the final answer must be JSON that matches the schema. phycode asks again up to two times. If the answer still does not match, phycode exits with code 4.
 - Exit codes: `0` completed; `2` stopped, canceled, or failed; `3` turn budget exhausted; `4` the answer does not match the output schema.
@@ -318,6 +331,9 @@ When the configuration defines no profiles, `PHYCODE_BASE_URL` and `PHYCODE_MODE
 | `mcp_servers`, `mcp` | MCP servers and tool search |
 | `web` | Web search and page fetching |
 | `skills` | `enabled`, `index`, and `autonomy` for skills |
+| `memory` | `enabled` and `autonomy` for memory notes. `autonomy` is `ask` (the default) or `auto`. |
+| `lsp` | Language servers that the `lsp` tool may start, by name |
+| `browser` | The headless Chrome or Chromium that the `browser` tool may start. It is off by default. |
 | `context`, `effort` | Window size, automatic compaction, and the default reasoning effort |
 | `ui` | Theme, editor, diff view, and subagent display |
 | `pricing` | Prices per model, used by `/usage` |
@@ -402,14 +418,14 @@ The permission mode comes from `permissions.mode` in the global configuration, o
 - The `rules` section takes `allow`, `ask`, and `deny` lists. Each entry has the form `tool:pattern`, or `*` for every call. For example, `"bash:git status *"` allows `git status`. A chained shell command is allowed only when every segment is allowed. An allow rule never covers `git -c`.
 - phycode evaluates a call in this order: `deny` rules, the hard line, agent restrictions, the permission mode, the `ask` and `allow` rules, and finally your answer.
 
-The hard line refuses a fixed set of destructive commands in every mode and with any approval. It covers recursive deletes of system paths, and shell expansions that hide the same operation, such as `rm -rf /`, `find / -delete`, and `wipefs` on a disk. It reads the command of every tool in the `exec` category, whatever the tool's name: `bash`, `ssh`, custom tools, and any exec tool added later. It also reads every step of a deploy target, and refuses the whole deploy before its first step runs. Inside a Podman or Docker sandbox, `bash` is exempt, because the container is the boundary. A tool that runs on the host, such as a custom tool or `ssh`, is not exempt. The hard line does not inspect the code that `run_code` runs.
+The hard line refuses a fixed set of destructive commands in every mode and with any approval. It covers recursive deletes of system paths, and shell expansions that hide the same operation, such as `rm -rf /`, `find / -delete`, and `wipefs` on a disk. It reads the command of every tool in the `exec` category, whatever the tool's name: `bash`, `ssh`, custom tools, and any exec tool added later. It also reads every step of a deploy target, and refuses the whole deploy before its first step runs. Inside a Podman or Docker sandbox, `bash` and `run_code` are exempt, because the container is the boundary. A tool that runs on the host, such as a custom tool or `ssh`, is not exempt. It also reads every text argument of an MCP tool, and, in a `run_code` program on the host, the shell commands that Python or JavaScript runs (`os.system`, `subprocess`, `child_process`, zx) and the recursive deletes of a literal path or of the home (`shutil.rmtree`, `fs.rmSync`, `fs.rm`). An `ssh` command, and a deploy step on an SSH host, are judged with the users, the mounts, and the `PATH` of that host, which phycode reads once for each host and session, and from the folder the command runs in there. When the host cannot be read, the facts of this machine are used.
 
 The target of `rm -r`, `chmod -R`, `chown -R`, `chgrp -R`, or `find -delete` is judged by its shape, not by a list of names. phycode expands `~`, `~USER`, `$HOME`, `..`, symbolic links, and globs, and it resolves a relative path from the project folder. It refuses the target when it is one of these:
 
 - The root, or any folder directly under it, such as `/usr`, `/mnt`, `/media`, or `/srv`.
 - A home folder: any home in `/etc/passwd`, your own `HOME`, and any folder directly under a home root, which covers a neighbour whose account is not in `/etc/passwd`. A home root is the parent of each home whose UID is between `UID_MIN` and `UID_MAX` of `login.defs`, and the base folder of `/etc/default/useradd` (`/home` by default). A folder that holds a home is refused too.
 - A mount point in `/proc/self/mounts`, or in the output of `/sbin/mount` where `/proc` is not mounted, or a folder that holds one.
-- A folder on `PATH`, the target of a top-level link such as `/bin -> usr/bin`, or a folder directly under a top-level folder that holds a `PATH` folder, such as `/usr/lib`. A `PATH` folder inside a home does not count, so `~/bin` does not guard the rest of the home.
+- A folder on `PATH`, the target of a top-level link such as `/bin -> usr/bin`, or a folder directly under a top-level folder that holds a `PATH` folder, such as `/usr/lib`. A `PATH` folder inside a home, such as `~/bin` or `~/.local/bin`, is refused itself, but it does not guard the rest of the home, so `~/project` and `~/bin/tool` are not on the line.
 - On macOS, the `Library` folder of your home.
 
 phycode reads the command around the target too. It expands globs and judges every match. It follows a `cd`, a variable set earlier in the command or in an `env` prefix, and a symbolic link made in the same command. It reads `find -exec rm`, `rsync --delete`, `shred`, and `git clean -f` like `rm -r`, reads the bodies of `trap` and `alias`, and sees through `parallel` and `ssh-agent`. A command nested more than four shells deep is refused, because the hard line cannot read it. A project below a top-level folder, such as `/srv/myproject` or `/opt/app`, is not on the line, but `/srv` and `/opt` are.
@@ -447,6 +463,7 @@ phycode offers tools according to the agent, the `tools.disabled` setting, and t
 | --- | --- | --- | --- |
 | `read` | read | Read a file, or a range of lines. By default it returns up to 200 lines (`limits.read_max_lines`). | No, except for secret-like files |
 | `list` | read | List project files. Inside a Git repository, it uses `git ls-files`. | No |
+| `glob` | read | Find files by name pattern, newest first. `*.php` matches the file name in any folder, and `src/**/*Test.php` matches a path. Inside a Git repository it respects `.gitignore`. | No, except for secret-like paths |
 | `grep` | read | Search file contents. It uses `rg` when `rg` is installed. | No, except for secret-like paths |
 | `repo_map` | read | Map classes and functions with their line numbers. Supported languages: PHP, JavaScript and TypeScript, Python, Go, Rust, Java, Kotlin, Scala, C#, Ruby, C, and C++. | No |
 | `write` | write | Create or replace a file. A PHP or Python file that fails the syntax check is rolled back. | Yes |
@@ -461,6 +478,11 @@ phycode offers tools according to the agent, the `tools.disabled` setting, and t
 | `gh_read`, `gh_write` | read, exec | Read from GitHub, and write to GitHub, through the `gh` command. | No, and yes |
 | `task` | delegate | Start a subagent. Offered only when subagents are enabled. | No |
 | `todo` | read | Show or update the task list of the session. | No |
+| `lsp` | read | Ask a language server about the code: definitions, references, hover text, symbols, and diagnostics. Offered only when `lsp` defines a server. | No, except for secret-like paths |
+| `browser` | exec | Drive a headless Chrome or Chromium to check a page or your own dev server: `open`, `text`, `screenshot`, `click`, `type`, `console`, and `close`. Offered only when `browser.enabled` is `true` and a browser binary is found. | Yes, and an `open` URL with a query string or credentials asks even for an allowed host |
+| `memory` | read | List the notes that earlier sessions saved, or read one in full. | No |
+| `memory_save` | write | Save a note for the next sessions, or forget one. | Yes, in every mode, unless `memory.autonomy` is `auto` |
+| `session_search` | read | Search the earlier sessions of the project for what was said. Every word must be in the same message. | No |
 | `web_search` | read | Search the web with the active backend. | No |
 | `web_fetch` | read | Fetch a page and return its text. | Yes, when the URL has a query string, user information, or a path longer than 300 characters |
 | `skill`, `skill_manage` | read, write | Load a skill, or create and change user skills. | `skill_manage` asks unless `skills.autonomy` is `auto` |
@@ -472,6 +494,23 @@ phycode offers tools according to the agent, the `tools.disabled` setting, and t
 
 The approval column describes the default `ask` mode. In `accept_edits`, write tools run without asking. In `yolo`, only the actions listed under [Permissions](#permissions) ask. In `plan`, only read tools are allowed. A read-only agent (`permission: readonly`) never receives write or exec tools.
 
+### Language servers
+
+- Define servers under `lsp` in the global configuration. A server has a `command` (the program and its arguments), the `extensions` it handles, such as `["php"]`, optional `root_markers` (file names such as `composer.json` that mark the root of a project), and optional `initialization_options`.
+- phycode starts a server on the first question about a file it handles, runs one for each server and project root, and stops it when the session ends. A server that dies starts again on the next call.
+- The model gives a 1-based line and column. phycode converts the column to the UTF-16 units that the protocol uses. Results show project-relative paths and 1-based positions, and they are capped: 10 definitions, 50 references, 200 symbols, and 100 diagnostics.
+- Diagnostics use the pull request when the server offers it, and wait for the pushed ones otherwise.
+
+### Browser
+
+- Set `browser.enabled` to `true` in the global configuration. phycode looks for `chromium`, `chromium-browser`, `google-chrome`, `google-chrome-stable`, or `chrome` on the `PATH`. `browser.command` names another binary.
+- `browser.allow_hosts` lists the hosts, or `*.domain` patterns, that a page may reach in addition to the public internet. The default is `localhost` and `127.0.0.1`, so the model can test your dev server. Other private ranges are refused unless you list them, and link-local and metadata addresses are never allowed.
+- phycode starts the browser on the first use, with a throw-away profile folder and a debugging port on `127.0.0.1`. It stops the browser and removes the folder when the session ends, and also when phycode dies.
+- Every request of a page, including redirects, sub-requests, frames, and workers, is checked before it reaches the network. A blocked request shows up in the `console` action. A popup is closed.
+- `browser.max_pages` (from 1 to 10, 3 by default) limits the open pages. `screenshot` needs a profile with `vision: true`.
+- As root or in a container, Chromium refuses to start without its own sandbox. Set `browser.no_sandbox` to `true` only in that case.
+- The text of a page is untrusted data, and phycode labels it as such.
+
 ## Agents and subagents
 
 An agent is a Markdown file with YAML frontmatter. The body of the file is the agent's system prompt.
@@ -479,9 +518,9 @@ An agent is a Markdown file with YAML frontmatter. The body of the file is the a
 | Agent | Mode | Tools | Notes |
 | --- | --- | --- | --- |
 | `build` | primary | All | The default agent. It answers without tools when the request does not need project work. |
-| `plan` | primary | `read`, `list`, `grep`, `task` | Read-only. It writes a plan whose steps another agent can carry out without seeing the investigation. |
-| `explore` | subagent | `read`, `list`, `grep` | Read-only. At most 8 turns. Its report should not exceed 200 words. |
-| `general` | subagent | `read`, `list`, `grep`, `write`, `edit`, `move`, `delete`, `bash`, `run_code` | At most 12 turns. It cannot delegate. |
+| `plan` | primary | `read`, `list`, `glob`, `grep`, `task` | Read-only. It writes a plan whose steps another agent can carry out without seeing the investigation. |
+| `explore` | subagent | `read`, `list`, `glob`, `grep` | Read-only. At most 8 turns. Its report should not exceed 200 words. |
+| `general` | subagent | `read`, `list`, `glob`, `grep`, `write`, `edit`, `move`, `delete`, `bash`, `run_code` | At most 12 turns. It cannot delegate. |
 
 The reviewer agents used by `/review` are `reviewer-readability`, `reviewer-reliability`, `reviewer-resilience`, `reviewer-risk`, and `reviewer-refuter`.
 
@@ -491,6 +530,7 @@ phycode looks for custom agents in this order of priority:
 2. `~/.config/phycode/agents`.
 3. `~/.claude/agents`.
 4. The built-in agents.
+5. The agents of installed plugins, labeled `plugin:NAME`.
 
 The frontmatter supports these fields:
 
@@ -519,6 +559,7 @@ Delegation follows these rules:
 - phycode searches `.agents/skills` and `.claude/skills` in the project, `~/.agents/skills` and `~/.claude/skills`, and `~/.config/phycode/skills`. The agent saves its own skills in the last folder.
 - With `skills.index` set to `on` (the default), the index of available skills is part of the prompt. The full text of a skill loads only when it is needed, through the `skill` tool.
 - `skill_manage` creates skills, patches them, and writes their files. Before it saves content, it scans the content for unsafe patterns. It asks for approval unless `skills.autonomy` is `auto`.
+- Installed plugins can bring skills too. phycode reads `skills/` inside each plugin folder.
 - `/skill` lists or shows a skill. `/skills` lists the gentle-ai skills in read-only mode.
 
 ## MCP servers
@@ -555,6 +596,8 @@ Delegation follows these rules:
 - Automatic compaction starts when the context reaches the window minus a buffer. The window is `context.max` when you set it, and the model's window otherwise. The buffer is `context.buffer` when you set it, and the larger of 200 tokens and 2 percent of the window otherwise. phycode summarizes the older turns with the model, and keeps the newest turns that fit in the last quarter of the window. Set `context.auto_compact` to `false` to turn automatic compaction off. Run `/compact` to compact manually.
 - `/context max <TOKENS>` changes the window. Add `--save` to store the value in the configuration.
 - `/handoff` writes a summary for a new session. The summary is saved in `.phycode/handoffs`.
+- `/fork` saves a copy of the conversation as a new session and records the session it came from. `/tree` draws the sessions with their forks. `run --fork ID` does the same without a terminal.
+- Memory notes are Markdown files with a name and a one-line description, in `.phycode/memory` for the project and in `~/.config/phycode/memory` for every project. The index of names and descriptions joins the system prompt, and the `memory` tool reads one note in full. `memory_save` refuses a note that looks like a key, a token, or a password, and each scope holds at most 100 notes. By default, saving or forgetting a note asks first, in every mode. Set `memory.autonomy` to `auto` to save without asking, or `memory.enabled` to `false` to turn memory off.
 - Before a turn changes a file, phycode stores the previous contents in `.phycode/checkpoints`. `/diff`, `/undo`, `/redo`, and `/rewind` use these copies.
 
 ## Integrations
@@ -562,7 +605,9 @@ Delegation follows these rules:
 - Agent Client Protocol (`phycode acp`). The agent speaks protocol version 1 over stdin and stdout. It offers four permission modes: Ask, Accept edits, Plan, and Do not ask.
 - RPC (`phycode rpc`). JSON lines over stdin and stdout. The full-screen interface uses it as its backend.
 - Serve daemon (`phycode serve`). One process serves several clients. It listens on a Unix socket, by default `$XDG_RUNTIME_DIR/phycode/serve.sock` or `/tmp/phycode-UID/serve.sock`, in a folder that you own with mode 0700. With `--listen`, it can listen on a loopback address instead, which requires a token (`--token-file`). Each client sends a `hello` message with the token and the project folder first. Anyone who connects can use your tools, so protect the socket and the token.
-- SSH and deployments. Hosts are defined in `ssh.hosts`, and deployment targets in `deploy.targets`. Targets can use Cloudflare, Vercel, Docker, Modal, SSH, or a custom command. Manage them with `phycode ssh` and `phycode deploy`.
+- Plugins (`phycode plugin`). A plugin is a folder with `agents/`, `skills/`, or `prompts/` inside, and an optional `plugin.json` with a `name`, a `description`, and a `version`. `phycode plugin add SOURCE` copies a folder, or clones a Git address (`https://`, `ssh://`, `file://`, or `git@host:path`) without running its hooks, into `~/.config/phycode/plugins/NAME`. The agents, skills, and prompt templates load at the next start. A plugin cannot contain symbolic links, and it has at most 1000 files and 10 MB.
+- Scheduled tasks (`phycode schedule`). `schedule add NAME "CRON" "TASK"` saves a job in `~/.config/phycode/schedules.json`. The cron expression has five fields (`30 8 * * 1-5`), or is `@hourly`, `@daily`, `@weekly`, or `@monthly`. `schedule run` stays in the foreground and starts `phycode run` for each job when it is due, so run it under systemd, tmux, or nohup. A job that is still running is not started again. The output goes to `~/.cache/phycode/schedule/NAME`, which keeps the last 20 logs of each job. A job is read-only by default, because `run` has no terminal to ask in. Add `--yolo` to `schedule add` to let a job write files and run commands.
+- SSH and deployments. Hosts are defined in `ssh.hosts`, and deployment targets in `deploy.targets`. Targets can use Cloudflare, Vercel, Docker, Modal, SSH, or a custom command. Manage them with `phycode ssh` and `phycode deploy`. When an `apply` fails after something was changed, and the target has a `rollback`, the error says how to roll back, and `phycode deploy` and the chat ask whether to roll back now. phycode never rolls back on its own.
 - gentle-ai. The optional integration shows the gentle-ai status with `/gentle`, and runs its commands after you approve each one. `gentle_ai.bin` sets the path to the binary, and `/persona` sets the persona of the chat replies.
 
 ## Architecture
@@ -576,20 +621,23 @@ Delegation follows these rules:
 | `src/Tools` | The tools that the model can call, and the tool registry |
 | `src/Security` | Permissions, rules, the hard line, path containment, secret files, and command analysis |
 | `src/Exec` | Command execution on the host and in bubblewrap, Podman, and Docker, with domain filtering and background jobs |
-| `src/Git` | The Git and GitHub CLI policies |
+| `src/Git` | The Git and GitHub CLI policies, and worktrees |
 | `src/Mcp` | The MCP client (stdio and HTTP), OAuth, and deferred tool search |
 | `src/Skills` | The skill catalog, scanner, and writer |
 | `src/Web` | Search backends, page fetching, the SSRF guard, and the cache |
 | `src/Review`, `src/Research`, `src/Btw` | The `/review`, `/deepresearch`, and `/btw` commands |
 | `src/Checkpoint` | File snapshots per turn, for `/undo`, `/redo`, and `/rewind` |
-| `src/Session` | Sessions, transcripts, compaction, and the context budget |
-| `src/Context` | Loading of `AGENTS.md` and `CLAUDE.md` |
+| `src/Session` | Sessions, forks, search, transcripts, compaction, and the context budget |
+| `src/Context` | Loading of `AGENTS.md` and `CLAUDE.md`, and `@PATH` mentions |
 | `src/Rpc`, `src/Acp`, `src/Serve` | Protocols for the full-screen interface, for editors, and for remote clients |
 | `src/Tui`, `src/Ui` | The built-in PHP interface, console output, and `stream-json` output |
 | `src/Ssh`, `src/Deploy` | SSH hosts, and deployment drivers |
 | `src/Gentle` | The gentle-ai integration |
 | `src/RepoMap` | The symbol map of the codebase |
-| `src/Memory` | Memory notes. Not connected yet. See [Known limitations](#known-limitations). |
+| `src/Lsp` | The language server client behind the `lsp` tool |
+| `src/Browser` | The Chrome DevTools Protocol client, the request policy, and the browser process behind the `browser` tool |
+| `src/Memory` | Memory notes and the `/memory` command |
+| `src/Plugin`, `src/Schedule` | Plugin installation, and cron parsing with the scheduler |
 | `src/Diff`, `src/Support` | Diffs, the key vault, redaction, JSON helpers, and state storage |
 | `tui/` | The full-screen interface in Go, built with Bubble Tea, Lip Gloss, and Glamour |
 | `resources/` | The built-in agents and personas |
@@ -613,7 +661,7 @@ vendor/bin/phpunit --testsuite unit    # unit suite only
 (cd tui && go test -race ./...)        # Go tests
 ```
 
-The unit tests use scripted model replies and temporary Git repositories, so they need neither a model server nor a container runtime. The integration tests start the RPC backend as a separate process. Tests that require bubblewrap are skipped when `bwrap` is not installed.
+The unit tests use scripted model replies and temporary Git repositories, so they need neither a model server nor a container runtime. The integration tests start the RPC backend as a separate process. Tests that require bubblewrap are skipped when `bwrap` is not installed. On FreeBSD, the WebSocket tests need the `sockets` extension (`php84-sockets`), because a socket pair there holds only a few kilobytes until the test enlarges its buffers.
 
 ### End-to-end test
 
@@ -651,13 +699,16 @@ bin/phycode doctor --cwd .
 ## Known limitations
 
 - Ollama is covered only by recorded fixtures. No chat model was installed for a live test.
-- The memory notes in `src/Memory/MemoryStore.php` enforce scope and secret rules, but no tool or prompt uses them yet.
-- `run_code` does not pass through the hard line. The sandbox is its protection.
-- The hard line judges an `ssh` command with the users, the mounts, and the `PATH` of this machine, not of the remote host.
+- `/goal` without `--check` trusts the model judge, which reads only the report of the turn. A small model can accept a goal that no command confirmed, so prefer `--check`.
+- `run --worktree` branches from the last commit. Uncommitted changes and ignored files, such as `.env` and `node_modules`, are not in the worktree. Interactive sessions and subagents do not use worktrees.
+- `phycode schedule run` does not start the jobs of minutes that passed while it was not running. A scheduled job does not inherit the variables of the scheduler, apart from `XDG_*` and `TMPDIR`, so a profile that uses `api_key_env` needs its key in the vault (`phycode keys set`) instead.
+- A plugin brings agents, skills, and prompt templates only. phycode does not load hooks or MCP servers from a plugin.
+- The `browser` tool resolves a name before Chrome does, so DNS rebinding can still change the address between the check and the request. Page WebSockets are not checked. `text` and `click` see the top frame only.
+- The first question to each language server waits up to 3 seconds for its first diagnostics and for its indexing to end. A server that never publishes diagnostics costs those 3 seconds once.
+- In a `run_code` program, the hard line sees only commands and paths that are written as literals. A path built while the program runs is not seen, so the sandbox is the protection of `run_code`.
 - A folder two or more levels below the root, such as `/usr/local/lib`, is on the hard line only when it is on `PATH`, is or holds a home, or is or holds a mount point. `/var/lib` is refused on most machines because the home of a system account is inside it, but that depends on the machine.
 - The hard line reads the summary of every exec tool as a command, so an `oracle` question that quotes a destructive command, for example in backticks, is refused too. Rephrase the question.
 - The hard line resolves links and globs when it reads the command, and the command runs later. A link or a folder that changes in between is not seen. This matters most when phycode runs as root and the model can make links, so run phycode as a normal user, or in a container.
-- Without a GNU `timeout`, which is always the case on FreeBSD, a background command stops at its lifetime only while phycode runs. If phycode is killed, the command goes on.
 - The container sandboxes and the end-to-end hard-line test have not run on macOS.
 - If a secret file is renamed to a name that does not look like a secret, an approved move exposes its content under the new name. The approval prompt shows both names.
 - For very long answers (about 120 KB), the Go interface uses a lot of CPU while the answer streams, because it renders Markdown for each chunk. This issue is known, and it is not fixed yet.
@@ -673,8 +724,8 @@ The table summarizes what each project's public README and documentation state a
 | Models | llama.cpp, Ollama, OpenAI, Anthropic, OpenRouter, Groq, and compatible servers | Several providers through `pi-ai` | Several, including Nous Portal and OpenRouter | Not described | Claude models | A ChatGPT account, or an OpenAI API key |
 | Permissions and sandboxing | Five permission modes, rules, a hard line, and bubblewrap, Podman, or Docker sandboxes | No built-in permission system. Recommends containers | `smart`, `manual`, and `off` approval modes. Seven terminal backends | A plan agent without edits. Bash requires approval | Permission modes. CI workflows run behind an egress firewall | Documented on the OpenAI website |
 | Subagents | One level, fresh context, inherited permissions | None, by design | `delegate_task`, up to 10 in parallel by default | The `general` subagent, invoked with `@general` | Agents inside plugins | Not described |
-| Skills and memory | `SKILL.md` skills, `AGENTS.md`, and sessions. Memory notes are not connected yet | The Agent Skills specification. A session tree with branches | Skills that the agent creates and improves. `MEMORY.md` and `USER.md` | Not described | Skills and commands inside plugins | `AGENTS.md`. The rest is on the OpenAI website |
-| Extensions | Hooks with five events, checks, custom tools, and MCP | TypeScript extensions in the process, npm or git packages, MCP, and codemode | Four hook systems, plugins, and MCP | A plugin API in `packages/plugin` | Plugins with commands, agents, hooks, and MCP | Hooks managed by administrators. The rest is on the OpenAI website |
+| Skills and memory | `SKILL.md` skills, `AGENTS.md`, sessions with forks, and memory notes | The Agent Skills specification. A session tree with branches | Skills that the agent creates and improves. `MEMORY.md` and `USER.md` | Not described | Skills and commands inside plugins | `AGENTS.md`. The rest is on the OpenAI website |
+| Extensions | Hooks with five events, checks, custom tools, MCP, and plugins | TypeScript extensions in the process, npm or git packages, MCP, and codemode | Four hook systems, plugins, and MCP | A plugin API in `packages/plugin` | Plugins with commands, agents, hooks, and MCP | Hooks managed by administrators. The rest is on the OpenAI website |
 | Interfaces | Chat, a full-screen Go interface, `run`, RPC, ACP, and `serve` | A full-screen interface, print and JSON modes, RPC, and an SDK | A CLI, messaging gateways, a desktop app, and cron | A terminal interface and a desktop app (beta) | Terminal, IDE, and `@claude` on GitHub | CLI, IDE extension, desktop app, and web |
 
 ## Contributing

@@ -21,6 +21,7 @@ use Phycode\Exec\FilteringProxy;
 use Phycode\Exec\ProcessRunner;
 use Phycode\Gentle\GentleAi;
 use Phycode\Gentle\ShellIntegration;
+use Phycode\Git\Worktrees;
 use Phycode\Llm\Http;
 use Phycode\Llm\Image;
 use Phycode\Llm\Llama\LlamaDiscovery;
@@ -90,6 +91,7 @@ final class Application
             'continue' => false,
             'resume' => null,
             'fork' => null,
+            'worktree' => null,
             'images' => [],
             'help' => false,
         ];
@@ -135,6 +137,7 @@ final class Application
                     case 'model':
                     case 'resume':
                     case 'fork':
+                    case 'worktree':
                     case 'output-schema':
                     case 'max-turns':
                     case 'output-format':
@@ -217,6 +220,9 @@ final class Application
         if ($options['continue'] && $options['resume'] !== null) {
             throw new PhycodeException('--continue and --resume cannot be used together: one picks the last session, the other a session by its id');
         }
+        if ($options['worktree'] !== null && !Worktrees::validName((string) $options['worktree'])) {
+            throw new PhycodeException('--worktree needs a name of letters, digits, dots, hyphens and underscores, such as fix-parser');
+        }
         if ($options['fork'] !== null && ($options['continue'] || $options['resume'] !== null)) {
             throw new PhycodeException('--fork starts from the one session it names: do not give --continue or --resume with it');
         }
@@ -227,7 +233,7 @@ final class Application
             throw new PhycodeException('--resume needs a session id, as /sessions lists them');
         }
         if ($options['command'] !== 'run') {
-            $only = ['format' => ['--output-format', 'text'], 'model' => ['--model', null], 'max_turns' => ['--max-turns', null], 'schema' => ['--output-schema', null], 'continue' => ['--continue', false], 'resume' => ['--resume', null], 'fork' => ['--fork', null], 'images' => ['--image', []]];
+            $only = ['format' => ['--output-format', 'text'], 'model' => ['--model', null], 'max_turns' => ['--max-turns', null], 'schema' => ['--output-schema', null], 'continue' => ['--continue', false], 'resume' => ['--resume', null], 'fork' => ['--fork', null], 'worktree' => ['--worktree', null], 'images' => ['--image', []]];
             foreach ($only as $key => [$flag, $default]) {
                 if ($options[$key] !== $default && !($key === 'format' && $options['format'] === 'json')) {
                     throw new PhycodeException("{$flag} is an option of run: phycode run {$flag} ... 'task'");
@@ -266,6 +272,7 @@ final class Application
             'ssh' => $this->ssh($options),
             'mcp' => $this->mcpCommand($options),
             'deploy' => $this->deploy($options),
+            'worktree' => $this->worktreeCommand($options),
             'schedule' => $this->schedule($options),
             'plugin' => $this->plugin($options),
             'shell' => ShellIntegration::cli($options['positional']),
@@ -279,6 +286,47 @@ final class Application
     private const SCHEMA_RETRIES = 2;
 
     private function runTask(array $options): int
+    {
+        if ($options['worktree'] === null) {
+            return $this->runPrepared($options, null, null);
+        }
+        $worktrees = new Worktrees(self::projectFolder($options));
+        $worktree = $worktrees->add((string) $options['worktree']);
+        try {
+            return $this->runPrepared([...$options, 'cwd' => $worktree['cwd']], $worktrees, $worktree);
+        } finally {
+            if (is_dir($worktree['path']) && !$worktrees->changed($worktree)) {
+                $worktrees->remove($worktree['name']);
+            }
+        }
+    }
+
+    private function worktreeCommand(array $options): int
+    {
+        $words = $options['positional'];
+        $worktrees = new Worktrees(self::projectFolder($options));
+        $action = $words[0] ?? 'list';
+        if ($action === 'remove' && count($words) === 2) {
+            $worktrees->remove((string) $words[1]);
+            fwrite(STDOUT, "removed {$words[1]}\n");
+
+            return 0;
+        }
+        if ($action !== 'list' || count($words) > 1) {
+            throw new PhycodeException('usage: phycode worktree [list | remove NAME]');
+        }
+        $all = $worktrees->all();
+        if ($all === []) {
+            fwrite(STDOUT, "no worktrees; phycode run --worktree NAME \"task\" makes one\n");
+        }
+        foreach ($all as $row) {
+            fwrite(STDOUT, sprintf("%-24s %-32s %s\n", $row['name'], $row['branch'], implode(', ', array_filter([$row['dirty'] ? 'uncommitted changes' : '', $row['ahead'] > 0 ? "{$row['ahead']} commits to merge" : ''])) ?: 'no changes'));
+        }
+
+        return 0;
+    }
+
+    private function runPrepared(array $options, ?Worktrees $worktrees, ?array $worktree): int
     {
         $prompt = trim(implode(' ', $options['positional']));
         if ($prompt === '' && !posix_isatty(STDIN)) {
@@ -392,6 +440,10 @@ final class Application
             $status = 'invalid_output';
             $reason = 'the answer does not fit the schema of --output-schema: ' . implode('; ', $invalid);
         }
+        $kept = $worktrees !== null && $worktree !== null && $worktrees->changed($worktree);
+        if ($worktrees !== null && $worktree !== null && !$kept) {
+            $worktrees->remove($worktree['name']);
+        }
         $result = [
             'status' => $status,
             'text' => $outcome->text,
@@ -406,6 +458,9 @@ final class Application
         ];
         if ($schema !== null && $invalid === null && $outcome->status === OutcomeStatus::Completed) {
             $result['structured_output'] = $structured;
+        }
+        if ($worktree !== null) {
+            $result['worktree'] = ['name' => $worktree['name'], 'branch' => $worktree['branch'], 'path' => $worktree['path'], 'kept' => $kept];
         }
         if ($ui !== null) {
             $ui->event('result', $result);
@@ -425,6 +480,11 @@ final class Application
         fwrite(STDERR, 'changes: ' . ($changed === [] ? 'none' : implode(', ', $changed)) . "\n");
         fwrite(STDERR, "transcript: {$transcript->path}\n");
         fwrite(STDERR, "session: {$sessionId}\n");
+        if ($worktree !== null) {
+            fwrite(STDERR, $kept
+                ? "worktree: {$worktree['path']} on branch {$worktree['branch']} holds the changes; git merge {$worktree['branch']} brings them in, phycode worktree remove {$worktree['name']} drops them\n"
+                : "worktree: {$worktree['name']} changed nothing, so it was removed\n");
+        }
 
         return $invalid !== null ? 4 : self::exitCode($outcome);
     }
@@ -1089,6 +1149,7 @@ final class Application
               phycode ssh [ACTION]              hosts the model may run commands on: list, add, remove, trust, test
               phycode mcp [ACTION]              MCP servers: list, login NAME, logout NAME, test NAME
               phycode deploy [ACTION]           where the model may deploy: list, add, remove, secret, plan, history; or NAME ACTION
+              phycode worktree [ACTION]         the git worktrees that run --worktree made: list (the default), remove NAME
               phycode plugin [ACTION]           plugins that bring agents, skills and prompt templates: list, add SOURCE, remove NAME
               phycode schedule [ACTION]         tasks that run on a cron schedule: list, add NAME "CRON" "TASK", remove NAME, run (the foreground scheduler)
               phycode version
@@ -1109,6 +1170,7 @@ final class Application
               --continue, -c   run only: go on with the newest session of the project
               --resume ID, -r ID  run only: go on with a saved session (/sessions lists the ids)
               --fork ID        run only: start from a copy of a saved session, which stays as it was
+              --worktree NAME  run only: run in a new git worktree on the branch phycode/NAME; it is removed when the run changes nothing
               --add-dir DIR    read-only folder outside the project: read, list and grep may use it (repeatable)
 
             serve options:

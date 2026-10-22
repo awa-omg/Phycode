@@ -49,7 +49,7 @@ final class LspClientTest extends TestCase
     public function testFramingSurvivesTinyChunksAndMultiByteBodies(): void
     {
         $text = 'é😀日本語 ' . str_repeat('xyz', 300);
-        $client = $this->started(['chunkBytes' => 7, 'results' => ['textDocument/hover' => ['contents' => $text]]]);
+        $client = $this->started(['chunkBytes' => 7, 'results' => ['textDocument/hover' => ['contents' => $text]]], null, [], new LspTimeouts());
 
         $result = $client->request('textDocument/hover', ['textDocument' => ['uri' => 'file:///x'], 'position' => ['line' => 0, 'character' => 0]]);
 

@@ -14,7 +14,7 @@ final class AcpUi implements Ui
 {
     private const LINE_CHARS = 200;
     private const KINDS = [
-        'read' => 'read', 'list' => 'read', 'repo_map' => 'read', 'grep' => 'search', 'glob' => 'search', 'edit' => 'edit', 'write' => 'edit', 'move' => 'move', 'delete' => 'delete',
+        'read' => 'read', 'list' => 'read', 'repo_map' => 'read', 'grep' => 'search', 'glob' => 'search', 'session_search' => 'search', 'edit' => 'edit', 'write' => 'edit', 'move' => 'move', 'delete' => 'delete',
         'bash' => 'execute', 'run_code' => 'execute', 'ssh' => 'execute', 'ssh_copy' => 'execute', 'job' => 'execute', 'deploy' => 'execute',
         'web_fetch' => 'fetch', 'web_search' => 'fetch', 'git_read' => 'read', 'git_write' => 'edit', 'git_remote' => 'execute', 'gh_read' => 'fetch', 'gh_write' => 'execute',
         'todo' => 'think', 'task' => 'other',

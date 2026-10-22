@@ -34,6 +34,8 @@ use Phycode\Security\Permissions;
 use Phycode\Security\Rules;
 use Phycode\Security\Workspace;
 use Phycode\Ssh\SshHosts;
+use Phycode\Session\SessionSearch;
+use Phycode\Session\SessionStore;
 use Phycode\Session\Transcript;
 use Phycode\Skills\SkillCatalog;
 use Phycode\Skills\SkillIndex;
@@ -64,6 +66,7 @@ use Phycode\Tools\OracleTool;
 use Phycode\Tools\ReadTool;
 use Phycode\Tools\RepoMapTool;
 use Phycode\Tools\RunCodeTool;
+use Phycode\Tools\SessionSearchTool;
 use Phycode\Tools\SshCopyTool;
 use Phycode\Tools\SshTool;
 use Phycode\Tools\TaskTool;
@@ -174,6 +177,7 @@ final class Kernel
             new GhWriteTool($root),
             new TaskTool($this->agents, $this->config->subagentsEnabled),
             new TodoTool($this->todos),
+            new SessionSearchTool(new SessionSearch(new SessionStore($root))),
             ...($this->config->oracle() === null ? [] : [new OracleTool(fn () => $this->config->oracle(), fn () => $this->providers, fn () => $this->usage)]),
         ];
         $this->laterTools = $this->settings->optionalTools($this->config, $this->ui, $root);

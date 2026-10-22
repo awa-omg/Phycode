@@ -24,7 +24,7 @@ final readonly class Config
     public const DIFF_VIEWS = ['auto', 'split', 'unified'];
     public const CONTEXT_MIN_TOKENS = 512;
     public const CONTEXT_MAX_TOKENS = 1000000;
-    public const BUILTIN_TOOLS = ['ask_user', 'bash', 'delete', 'deploy', 'deploy_info', 'edit', 'gh_read', 'gh_write', 'git_read', 'git_remote', 'git_write', 'glob', 'grep', 'list', 'move', 'read', 'repo_map', 'run_code', 'skill', 'skill_manage', 'ssh', 'ssh_copy', 'task', 'todo', 'web_fetch', 'web_search', 'write'];
+    public const BUILTIN_TOOLS = ['ask_user', 'bash', 'delete', 'deploy', 'deploy_info', 'edit', 'gh_read', 'gh_write', 'git_read', 'git_remote', 'git_write', 'glob', 'grep', 'list', 'move', 'read', 'repo_map', 'run_code', 'session_search', 'skill', 'skill_manage', 'ssh', 'ssh_copy', 'task', 'todo', 'web_fetch', 'web_search', 'write'];
     private const HOOK_EVENTS = ['PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'Stop', 'SubagentStop'];
     private const CHECK_KEYS = ['name', 'match', 'command', 'kind', 'timeout'];
     public const SEARCH_BACKENDS = ['none', 'searxng', 'brave', 'tavily', 'exa', 'perplexity', 'ollama', 'firecrawl'];

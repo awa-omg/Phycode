@@ -64,6 +64,32 @@ final class SessionStore
         return $sessions;
     }
 
+    public function recent(int $limit): array
+    {
+        $folder = Files::runtimeFolder($this->root, 'sessions');
+        if (!is_dir($folder)) {
+            return [];
+        }
+        $modified = [];
+        foreach (scandir($folder) ?: [] as $name) {
+            $id = str_ends_with($name, '.json') ? substr($name, 0, -5) : '';
+            if (self::validId($id) && !is_link($folder . '/' . $name)) {
+                $modified[$id] = (int) @filemtime($folder . '/' . $name);
+            }
+        }
+        arsort($modified);
+        $sessions = [];
+        foreach (array_slice(array_keys($modified), 0, max(0, $limit)) as $id) {
+            try {
+                $sessions[] = $this->load((string) $id);
+            } catch (PhycodeException) {
+                continue;
+            }
+        }
+
+        return $sessions;
+    }
+
     public function load(string $id): array
     {
         if (!self::validId($id)) {

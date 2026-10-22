@@ -14,6 +14,7 @@ use Phycode\Cli\Commands\CommandContext;
 use Phycode\Config\Config;
 use Phycode\Config\ConfigWriter;
 use Phycode\Config\Profile;
+use Phycode\Context\Mentions;
 use Phycode\Diff\FileDiff;
 use Phycode\Diff\TextDiff;
 use Phycode\Gentle\Approval;
@@ -842,10 +843,10 @@ final class ChatSession
         }
 
         $this->runAsTurn(function (Cancellation $cancel) use ($input): void {
-            if (str_starts_with($input, '@')) {
+            if (str_starts_with($input, '@') && $this->callsAgent($input)) {
                 $this->runDirect(substr($input, 1), $cancel);
             } else {
-                $this->runTurn($input, $cancel);
+                $this->runTurn($input, $cancel, mentions: true);
             }
         });
         $this->planHandoff();
@@ -1625,7 +1626,27 @@ final class ChatSession
         $this->lastReason = $this->redact(is_string($reason) ? $reason : $result->content);
     }
 
-    private function runTurn(string $input, Cancellation $cancel, array $images = []): void
+    private function callsAgent(string $input): bool
+    {
+        $word = explode(' ', substr($input, 1), 2)[0];
+
+        return $this->kernel->agents->get($word) !== null || Mentions::existing(rtrim($word, '.,;:!?'), $this->kernel->workspace) === null;
+    }
+
+    private function attachMentions(string $message, Cancellation $cancel): string
+    {
+        $result = (new Mentions())->attach($message, $this->context($cancel));
+        if ($result['attached'] !== []) {
+            $this->kernel->ui->notice('info', 'attached ' . implode(', ', $result['attached']));
+        }
+        foreach ($result['notes'] as $note) {
+            $this->kernel->ui->notice('warn', $this->redact($note));
+        }
+
+        return $result['text'];
+    }
+
+    private function runTurn(string $input, Cancellation $cancel, array $images = [], bool $mentions = false): void
     {
         $ui = $this->kernel->ui;
         $mark = $this->kernel->changes->mark();
@@ -1639,6 +1660,9 @@ final class ChatSession
         }
         if ($hook->context !== []) {
             $message .= "\n\nUserPromptSubmit hook:\n" . implode("\n", $hook->context);
+        }
+        if ($mentions) {
+            $message = $this->attachMentions($message, $cancel);
         }
         $this->conversation->addUser($message, $images);
         $prompt = $tools === $this->kernel->tools ? null : $this->systemPrompt($tools);

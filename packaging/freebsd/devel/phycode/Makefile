@@ -4,7 +4,7 @@ CATEGORIES=	devel
 MASTER_SITES=	https://github.com/awa-omg/Phycode/releases/download/v${DISTVERSION}/
 EXTRACT_SUFX=	.phar
 
-MAINTAINER=	ports@FreeBSD.org
+MAINTAINER=	katuharina@gmail.com
 COMMENT=	Coding agent for local models, written in PHP
 WWW=		https://github.com/awa-omg/Phycode
 

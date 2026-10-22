@@ -711,6 +711,10 @@ final class Application
             $found = ProcessRunner::which($binary);
             $write(sprintf("[%s] %-22s %s\n", $found !== null ? 'ok' : '--', $binary, $found ?? 'not found'));
         }
+        $browser = $kernel->config->browser();
+        $browserBinary = $browser->binary();
+        $browserState = $browser->enabled ? 'the browser tool is on' : 'the browser tool is off: set browser.enabled to use it';
+        $write(sprintf("[%s] %-22s %s\n", $browserBinary !== null ? 'ok' : '--', 'browser', $browserBinary !== null ? "{$browserBinary} ({$browserState})" : 'not found (install Chrome or Chromium, or set browser.command)' . ($browser->enabled ? '; the browser tool is not offered' : '')));
 
         $sandbox = $kernel->config->sandbox;
         if ($sandbox->default === 'host') {

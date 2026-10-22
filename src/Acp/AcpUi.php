@@ -17,7 +17,7 @@ final class AcpUi implements Ui
         'read' => 'read', 'list' => 'read', 'repo_map' => 'read', 'grep' => 'search', 'glob' => 'search', 'session_search' => 'search', 'memory' => 'read', 'edit' => 'edit', 'write' => 'edit', 'move' => 'move', 'delete' => 'delete',
         'bash' => 'execute', 'run_code' => 'execute', 'ssh' => 'execute', 'ssh_copy' => 'execute', 'job' => 'execute', 'deploy' => 'execute',
         'web_fetch' => 'fetch', 'web_search' => 'fetch', 'git_read' => 'read', 'git_write' => 'edit', 'git_remote' => 'execute', 'gh_read' => 'fetch', 'gh_write' => 'execute',
-        'todo' => 'think', 'task' => 'other', 'memory_save' => 'other', 'lsp' => 'search',
+        'todo' => 'think', 'task' => 'other', 'memory_save' => 'other', 'lsp' => 'search', 'browser' => 'fetch',
     ];
 
     private ?string $sessionId = null;

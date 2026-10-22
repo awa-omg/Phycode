@@ -70,6 +70,7 @@ final readonly class ToolSettings
         $tools[] = new SkillManageTool(new SkillWriter($config->configDir), $config->skillsEnabled(), $config->skillsAutonomy());
 
         $tools[] = new AskUserTool($ui->interactive());
+        array_push($tools, ...BrowserTool::offered($config, $ui));
         foreach ($this->custom as $entry) {
             $tools[] = new CustomTool($entry['name'], $entry['description'], $entry['command'], $entry['stdin']);
         }

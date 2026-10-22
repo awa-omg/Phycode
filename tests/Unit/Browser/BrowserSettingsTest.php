@@ -120,7 +120,7 @@ final class BrowserSettingsTest extends TestCase
     {
         $this->pathWith('bash');
 
-        self::assertNull((new BrowserSettings(true))->binary());
+        self::assertSame(FakeBrowser::installed(), (new BrowserSettings(true))->binary(), 'only the application folders of macOS are left');
     }
 
     public function testACommandIsUsedInsteadOfTheSearch(): void

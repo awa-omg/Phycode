@@ -28,7 +28,10 @@ final class BrowserDoctorTest extends TestCase
         Kit::write($folder . '/chromium', "#!/bin/sh\nexit 0\n");
         chmod($folder . '/chromium', 0755);
         foreach (['timeout', 'bash', 'git'] as $program) {
-            symlink((string) trim((string) shell_exec('command -v ' . $program)), $folder . '/' . $program);
+            $found = trim((string) shell_exec('command -v ' . $program));
+            if ($found !== '') {
+                symlink($found, $folder . '/' . $program);
+            }
         }
 
         return $folder;
@@ -71,6 +74,13 @@ final class BrowserDoctorTest extends TestCase
         $quiet = $this->doctor([], $empty);
         $enabled = $this->doctor(['browser' => ['enabled' => true]], $empty);
 
+        $installed = FakeBrowser::installed();
+        if ($installed !== null) {
+            self::assertSame(['ok', $installed . ' (the browser tool is off: set browser.enabled to use it)'], self::line($quiet), 'macOS has a browser in /Applications');
+            self::assertSame(['ok', $installed . ' (the browser tool is on)'], self::line($enabled));
+
+            return;
+        }
         self::assertSame(['--', 'not found (install Chrome or Chromium, or set browser.command)'], self::line($quiet));
         self::assertSame(['--', 'not found (install Chrome or Chromium, or set browser.command); the browser tool is not offered'], self::line($enabled));
     }

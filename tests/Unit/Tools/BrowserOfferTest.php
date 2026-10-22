@@ -73,6 +73,12 @@ final class BrowserOfferTest extends TestCase
 
         $tools = BrowserTool::offered($this->config(['enabled' => true]), $ui);
 
+        if (FakeBrowser::installed() !== null) {
+            self::assertCount(1, $tools, 'macOS has a browser in /Applications');
+            self::assertSame([], $ui->events);
+
+            return;
+        }
         self::assertSame([], $tools);
         self::assertSame([['notice', 'warn', 'browser.enabled is true, but no Chrome or Chromium was found, so the browser tool is not offered: install one, or set browser.command to its path']], $ui->events);
     }

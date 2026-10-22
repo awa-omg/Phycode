@@ -8,6 +8,20 @@ use Phycode\Tests\Support\Kit;
 
 final class FakeBrowser
 {
+    public static function installed(): ?string
+    {
+        if (PHP_OS_FAMILY !== 'Darwin') {
+            return null;
+        }
+        foreach (\Phycode\Browser\BrowserSettings::MACOS_APPLICATIONS as $path) {
+            if (is_file($path) && is_executable($path)) {
+                return $path;
+            }
+        }
+
+        return null;
+    }
+
     public const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR4nGP8z8Dwn4EIwESMolGFSAAAXfkCCSrSSVQAAAAASUVORK5CYII=';
     public const JPEG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/wAALCAACAAIBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAAB//EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKf/Z';
 

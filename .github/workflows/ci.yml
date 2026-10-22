@@ -26,10 +26,11 @@ jobs:
       - run: vendor/bin/phpunit
 
   macos:
-    runs-on: macos-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
+        runner: [macos-latest, macos-26-intel]
         coreutils: [without, with]
     steps:
       - uses: actions/checkout@v7

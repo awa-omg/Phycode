@@ -31,6 +31,7 @@ use Phycode\Plugin\PluginCli;
 use Phycode\Rpc\JsonLines;
 use Phycode\Rpc\RpcServer;
 use Phycode\Rpc\RpcUi;
+use Phycode\Schedule\ScheduleCli;
 use Phycode\Security\PhpAdvisory;
 use Phycode\Security\Workspace;
 use Phycode\Serve\ServeDaemon;
@@ -265,6 +266,7 @@ final class Application
             'ssh' => $this->ssh($options),
             'mcp' => $this->mcpCommand($options),
             'deploy' => $this->deploy($options),
+            'schedule' => $this->schedule($options),
             'plugin' => $this->plugin($options),
             'shell' => ShellIntegration::cli($options['positional']),
             'btw-run' => $this->btwRun(),
@@ -895,6 +897,15 @@ final class Application
         return PluginCli::run($options['positional'], rtrim((string) (getenv('XDG_CONFIG_HOME') ?: $home . '/.config'), '/') . '/phycode', STDOUT, STDERR);
     }
 
+    private function schedule(array $options): int
+    {
+        $home = (string) (getenv('HOME') ?: '/root');
+        $configDir = rtrim((string) (getenv('XDG_CONFIG_HOME') ?: $home . '/.config'), '/') . '/phycode';
+        $stateFolder = rtrim((string) (getenv('XDG_CACHE_HOME') ?: $home . '/.cache'), '/') . '/phycode/schedule';
+
+        return ScheduleCli::run($options['positional'], ['cwd' => self::projectFolder($options), 'yolo' => $options['yolo'], 'profile' => $options['profile'], 'agent' => $options['agent']], $configDir, $stateFolder, STDOUT, STDERR);
+    }
+
     private function mcpCommand(array $options): int
     {
         $home = (string) (getenv('HOME') ?: '/root');
@@ -1079,6 +1090,7 @@ final class Application
               phycode mcp [ACTION]              MCP servers: list, login NAME, logout NAME, test NAME
               phycode deploy [ACTION]           where the model may deploy: list, add, remove, secret, plan, history; or NAME ACTION
               phycode plugin [ACTION]           plugins that bring agents, skills and prompt templates: list, add SOURCE, remove NAME
+              phycode schedule [ACTION]         tasks that run on a cron schedule: list, add NAME "CRON" "TASK", remove NAME, run (the foreground scheduler)
               phycode version
 
             Options:

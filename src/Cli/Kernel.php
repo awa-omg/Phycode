@@ -164,7 +164,7 @@ final class Kernel
         $this->jobs = new BackgroundJobs($cacheDir . '/jobs', $this->config->limits->backgroundJobs, $this->config->limits->backgroundLifetime);
         $this->ssh = new SshHosts($this->config->sshHosts(), $this->processes);
         $this->todos = new TodoList();
-        $this->lsp = new LspServers($this->config->lspServers());
+        $this->lsp = new LspServers($this->config->lspServers(), clientVersion: Application::VERSION);
         $this->memory = new MemoryStore($root, $configDir);
         $this->deployments = new Deployments($this->config->deployTargets(), new Vault($configDir), $this->processes, $this->ssh, $root);
         $remote = [
@@ -197,7 +197,7 @@ final class Kernel
             ...($this->config->oracle() === null ? [] : [new OracleTool(fn () => $this->config->oracle(), fn () => $this->providers, fn () => $this->usage)]),
         ];
         $this->laterTools = $this->settings->optionalTools($this->config, $this->ui, $root);
-        $servers = new McpServers($this->config->mcpServers() + $extraMcp, $root, new Vault($configDir), $this->config->mcpToolSearch());
+        $servers = new McpServers($this->config->mcpServers() + $extraMcp, $root, new Vault($configDir), $this->config->mcpToolSearch(), clientVersion: Application::VERSION);
         $this->mcp = $mcp && !$servers->isEmpty() ? $servers : null;
         $this->refreshWeb($this->config);
         $this->commands = new CommandRegistry();

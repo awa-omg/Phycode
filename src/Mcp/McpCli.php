@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Phycode\Mcp;
 
+use Phycode\Cli\Application;
 use Phycode\Support\PhycodeException;
 use Phycode\Support\Redaction;
 use Phycode\Support\Text;
@@ -109,7 +110,7 @@ final class McpCli
     private static function test(array $args, array $servers, string $cwd, Vault $vault, $out, float $timeout): int
     {
         $server = self::server($args, $servers);
-        $connection = McpServers::build($args[0], $server, $cwd, $vault, $timeout, '0.1.0');
+        $connection = McpServers::build($args[0], $server, $cwd, $vault, $timeout, Application::VERSION);
         try {
             $connection->start();
             $tools = $connection->listTools();

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Phycode\Mcp;
 
+use Phycode\Cli\Application;
 use Phycode\Support\PhycodeException;
 use Phycode\Support\Text;
 use Phycode\Support\Vault;
@@ -25,7 +26,7 @@ final class McpCatalog
 
             $client = null;
             try {
-                $client = McpServers::build($name, $server, $cwd, $vault, $timeout, '0.1.0');
+                $client = McpServers::build($name, $server, $cwd, $vault, $timeout, Application::VERSION);
                 $tools = $client->listTools();
             } catch (PhycodeException $error) {
                 $items[] = self::item($name, 'not started', $redact($error->getMessage()), 'error');

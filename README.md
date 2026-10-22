@@ -8,7 +8,7 @@ Local coding agent for llama.cpp servers with multi-agent delegation
 
 phycode runs in your terminal and works on one project folder at a time. It reads and edits files, searches the code, and runs commands. It asks for approval before it changes anything, unless you configure it otherwise. phycode targets local models served by llama.cpp and Ollama. It also works with OpenAI, Anthropic, OpenRouter, Groq, and any server that implements the OpenAI chat completions API.
 
-Version 0.1.0 is an early release. It has been tested with Qwen3.5 0.8B and 2B (Q8_0) on llama.cpp b11721. Small models follow tool-calling protocols unevenly, so review every change they propose.
+Version 0.2.0 is an early release. [CHANGELOG.md](CHANGELOG.md) lists what each version changed. It has been tested with Qwen3.5 0.8B and 2B (Q8_0) on llama.cpp b11721. Small models follow tool-calling protocols unevenly, so review every change they propose.
 
 ## Table of contents
 
@@ -118,9 +118,10 @@ The port downloads `phycode-VERSION.phar` from the GitHub release `vVERSION`, so
 ```sh
 cp -R packaging/freebsd/devel/phycode /usr/ports/devel/phycode
 cd /usr/ports/devel/phycode
-make makesum
 make install clean
 ```
+
+The port holds the checksum of the archive of its version in `distinfo`. After you change `DISTVERSION`, run `make makesum` to write the checksum of the new archive.
 
 ### Supported systems
 

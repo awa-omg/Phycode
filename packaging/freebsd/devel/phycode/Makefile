@@ -1,5 +1,5 @@
 PORTNAME=	phycode
-DISTVERSION=	0.1.0
+DISTVERSION=	0.2.0
 CATEGORIES=	devel
 MASTER_SITES=	https://github.com/awa-omg/Phycode/releases/download/v${DISTVERSION}/
 EXTRACT_SUFX=	.phar
